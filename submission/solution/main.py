@@ -609,7 +609,7 @@ class Solution(object):
 
         # self.detect_action_online(outpath)
         self.detect_action_offline(outpath)
-        self.save_offline_detection(self.tracks_history, self.unmatched_tracks_history, self.unmatched_detections_history, self.frames_idx_history)
+        # self.save_offline_detection(self.tracks_history, self.unmatched_tracks_history, self.unmatched_detections_history, self.frames_idx_history)
 
     def wrapup_detections(self, boxes, crops, is_person):
         def get_features(crops):
@@ -988,10 +988,13 @@ def main(vid_src=None, grd_src=None):
         vid_src, grd_src = sys.argv[1], sys.argv[2]
     args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs'])
 
+    t0 = time.perf_counter()
     solution = Solution(args)
     with torch.no_grad():
         solution.run()
         # solution.read_csv_gt_tracks()
+    t1 = time.perf_counter()
+    print('Total Runtime = %.2f' % (t1 - t0))
 
 if __name__ == '__main__':
     parser = default_parser()
