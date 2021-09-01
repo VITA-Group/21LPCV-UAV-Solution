@@ -1,0 +1,11 @@
+ *.MP4
+*.m4v
+*.mp4
+*.pkl
+**/legacy
+**/.idea
+**/.DS_Store
+__pycache__/*
+*.vscode
+**/outputs
+**/inputs
