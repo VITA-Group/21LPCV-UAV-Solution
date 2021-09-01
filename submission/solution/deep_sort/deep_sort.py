@@ -15,28 +15,19 @@ class DeepSort(object):
         max_cosine_distance = max_dist
         metric_person = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
         metric_ball = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
-        # self.tracker_person = Tracker(metric_person, 0, max_iou_distance=max_iou_distance)
-        # self.tracker_ball = Tracker(metric_ball, 1, max_iou_distance=max_iou_distance)
         self.tracker_person = Tracker(metric_person)
         self.tracker_ball = Tracker(metric_ball)
 
 
     def update(self, person_detections, ball_detections, orig_img):
 
-        # update tracker
-        # unmatched_person_tracks, unmatched_person_detections = self.tracker_person.update(dets_person, orig_img, self.extractor)
-        unmatched_person_tracks, unmatched_person_detections = self.tracker_person.update(person_detections)
+        self.tracker_person.update(person_detections)
 
         if ball_detections:
-            # unmatched_ball_tracks, unmatched_ball_detections = self.tracker_ball.update(dets_ball, orig_img, self.extractor)
-            unmatched_ball_tracks, unmatched_ball_detections = self.tracker_ball.update(ball_detections)
+            self.tracker_ball.update(ball_detections)
             tracks = self.tracker_person.tracks + self.tracker_ball.tracks
-            # unmatched_tracks = unmatched_person_tracks + unmatched_ball_tracks
-            # unmatched_detections = unmatched_person_detections + unmatched_ball_detections
         else:
             tracks = self.tracker_person.tracks
-            # unmatched_tracks = unmatched_person_tracks
-            # unmatched_detections = unmatched_person_detections
 
 
         # output bbox identities

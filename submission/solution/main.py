@@ -181,7 +181,6 @@ class Solution(object):
         self.yolo = torch.jit.load(opt.yolo_weights, map_location='cpu')
         self.online_action_detector = OnlineActionDetector(ball_ids=self.gt_bids,
                                                            person_ids=self.gt_pids)
-        # self.ball_reid = BallReID()
 
         '''
         Initialize Dataloader
@@ -189,7 +188,7 @@ class Solution(object):
         model_stride = torch.tensor([8, 16, 32])
         self.stride = int(model_stride.max())  # model stride
         self.imgsz = check_img_size(opt.img_size, s=self.stride)  # check img_size w.r.t. model stride
-        print(self.imgsz)
+        # print(self.imgsz)
         self.dataset = LoadImages(opt.source, img_size=self.imgsz, stride=self.stride)
 
         '''
@@ -211,24 +210,12 @@ class Solution(object):
     def isclose(self, a, b, rel_tol=1e-09, abs_tol=0.0):
         return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
-
-    # def save_frames_tracks_history(self, tracks, unmatched_tracks, unmatched_detections, frame_idx):
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
         tracks_ltwh = np.zeros_like(tracks[:, :6], dtype=int)
         tracks_ltwh[:, :2] = tracks[:, :2]
         tracks_ltwh[:, 2:4] = tracks[:, 2:4] - tracks[:, :2]
         tracks_ltwh[:, 4:6] = tracks[:, 4:6]
-
-        # if unmatched_tracks:
-        #     unmatched_tracks = [np.concatenate((unmatched.to_tlwh(), np.array([self.track_gt_idMap[unmatched.track_id], unmatched.cls])))
-        #                                        for unmatched in unmatched_tracks]
-        #     self.unmatched_tracks_history[frame_idx] = np.vstack(unmatched_tracks)
-        #
-        # if unmatched_detections:
-        #     unmatched_detections = [np.concatenate((unmatched.tlwh, np.array([unmatched.confidence, unmatched.clses])))
-        #                             for unmatched in unmatched_detections]
-        #     self.unmatched_detections_history[frame_idx] = np.vstack(unmatched_detections)
 
         self.tracks_history.append(tracks_ltwh)
         self.frames_idx_history.append(frame_idx)
@@ -291,19 +278,6 @@ class Solution(object):
             gt_labels[i, :labels.shape[0], :] = labels
             gt_bids += labels[labels[:,0] == 1, 1].astype(int).tolist()
             gt_pids += labels[labels[:,0] == 0, 1].astype(int).tolist()
-            # for i in range(labels.shape[0]):
-            #     row = labels[i]
-            #     cls, id, cxcywh = int(row[0]), int(row[1]), row[2:6]
-            #     if cls == 0:
-            #         if id in gt_ptracks_dct:
-            #             gt_ptracks_dct[id].append(cxcywh)
-            #         else:
-            #             gt_ptracks_dct[id] = []
-            #     else:
-            #         if id in gt_btracks_dct:
-            #             gt_btracks_dct[id].append(cxcywh)
-            #         else:
-            #             gt_btracks_dct[id] = []
         return unique_frames, gt_labels, np.unique(gt_pids).tolist(), np.unique(gt_bids).tolist()
 
 
@@ -365,18 +339,8 @@ class Solution(object):
                 # ltrb, id, cls
                 gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
                 gts_person, gts_ball = np.copy(gts[gts[:, 5] == 0]), np.copy(gts[gts[:, 5] == 1])
-                # gts_person[:, 4] = 1
-                # gts_ball[:, 4] = 1
 
-
-                # gts_persons = torch.vstack([gt for gt in gts if self.isclose(gt[5], 0)])
-                # gts_balls = torch.vstack([gt for gt in gts if self.isclose(gt[5], 1)])
                 self.crop_activity_region.update_memory(gts[:, :4])
-
-                self.deepsort.tracker_person.set_track_limit(gts_person.shape[0])
-                self.deepsort.tracker_ball.set_track_limit(gts_ball.shape[0])
-                self.deepsort.tracker_person.set_track_start(0)
-                self.deepsort.tracker_ball.set_track_start(gts_person.shape[0])
 
                 gts_person_ids = gts_person[:, 4]
                 persons_order = [self.gt_pids.index(pid) for pid in gts_person_ids]
@@ -385,28 +349,8 @@ class Solution(object):
 
                 if gts_person.size > 0:
                     self.update_gt_cache(gts_person, img_orig, self.gt_pids, persons_order, frame_idx, is_person=True)
-                    # person_crops = self.get_crops(gts_person, img_orig)
-                    # ordered_person_crops = np.zeros((len(self.gt_pids), 128, 64, 3), dtype=np.uint8)
-                    # ordered_person_boxes = np.zeros((len(self.gt_pids), 4), dtype=np.int32)
-                    # for i, idx in enumerate(arg_gts_person_ids):
-                    #     ordered_person_crops[idx] = person_crops[i]
-                    #     ordered_person_boxes[idx] = gts_person[i]
-                    # self.cache.update(frame_idx, ordered_person_crops, ordered_person_boxes, is_person=True)
-                    # person_detections = self.wrapup_detections(gts_person, img_orig)
-                # else:
-                #     person_detections = []
                 if gts_ball.size > 0:
                     self.update_gt_cache(gts_ball, img_orig, self.gt_bids, balls_order, frame_idx, is_person=False)
-
-                    # ball_crops = self.get_crops(gts_ball, img_orig)
-                    # ordered_ball_crops = np.zeros((len(self.gt_bids), 128, 64, 3), dtype=np.uint8)
-                    # for i, idx in enumerate(arg_gts_ball_ids):
-                    #     ordered_ball_crops[idx] = ball_crops[i]
-                    # self.cache.update(frame_idx, ordered_ball_crops, is_person=False)
-                    # ball_detections = self.wrapup_detections(gts_ball, img_orig)
-                # else:
-                #     ball_detections = []
-                # frame_detections_history[frame_idx] = (person_detections, ball_detections)
             else:
 
                 # Sampling at a fixed rate
@@ -462,7 +406,7 @@ class Solution(object):
                                                                     (dets_ball.shape[0], dets_person.shape[0]))
                 if not np.any(bp_collistion_matx):
                     self.key_frames.remove(frame_idx)
-                    print(frame_idx)
+                    # print(frame_idx)
                     frame_idx += 1
                     continue
 
@@ -498,7 +442,7 @@ class Solution(object):
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
                 # img_orig = img_dct[frame_idx]
-                print(frame_idx)
+                # print(frame_idx)
                 # person_detections, ball_detections = frame_detections_history[frame_idx]
                 gt_crops_person, gt_boxes_person = self.cache.fetch(frame_idx, is_person=True)
                 valid_idx = ~np.all(gt_boxes_person == 0, axis=1)
@@ -536,39 +480,11 @@ class Solution(object):
 
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
-                # img_orig = img_dct[frame_idx]
-                print(frame_idx)
-                # # person_detections, ball_detections = frame_detections_history[frame_idx]
-                # gt_crops_person, gt_boxes_person = self.cache.fetch(frame_idx, is_person=True)
-                # valid_idx = ~np.all(gt_boxes_person == 0, axis=1)
-                # det_boxes_person = gt_boxes_person[valid_idx, ...]
-                # det_crops_person = det_crops_person[valid_idx, ...]
-                # selected_pids = np.array(self.gt_pids)[valid_idx]
-
-                # gt_crops_ball, gt_boxes_ball = self.cache.fetch(frame_idx, is_person=False)
-                # valid_idx = ~np.all(gt_boxes_ball == 0, axis=1)
-                # selected_bids = np.array(self.gt_bids)[valid_idx]
-
-                # person_detections = self.wrapup_detections(boxes=gt_boxes_person, crops=gt_crops_person, is_person=True)
-                # ball_detections = self.wrapup_detections(boxes=gt_boxes_ball, crops=gt_crops_ball, is_person=False)
+                # print(frame_idx)
 
                 person_detections, ball_detections = gt_pdets_dct[frame_idx], gt_bdets_dct[frame_idx]
                 gt_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
 
-                # gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
-                # Remove empty annotation with zeros as placeholder
-                # gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
-                # gts_scaled = np.multiply(gts_raw, np.array([1.0, 1.0, img_w, img_h, img_w, img_h]))
-                # gts_ltrb = self.cxcywh2xyxy(gts_scaled[:, 2:], img_orig)
-                # ltrb, id, cls
-                # gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
-
-                # self.track_id_correction(gts, gt_tracks, img_h, img_w)
-                # track_ids = gt_tracks[:, 4]
-                # gt_tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-
-                # self.online_action_detector.update_catches(gt_tracks, frame_idx)
-                # self.save_frames_tracks_history(gt_tracks, unmatched_tracks, unmatched_detections, frame_idx)
                 if len(gt_tracks) > 0:
                     if self.opt.save_img:
                         self.draw_tracks_actions(img_orig, gt_tracks, frame_idx)
@@ -576,7 +492,7 @@ class Solution(object):
                 self.save_frames_tracks_history(gt_tracks, frame_idx)
 
             elif frame_idx in self.key_frames:
-                print(frame_idx)
+                # print(frame_idx)
                 # img_orig = img_dct[frame_idx]
 
                 det_crops_person, det_boxes_person = self.cache.fetch(frame_idx, is_person=True)
@@ -601,10 +517,6 @@ class Solution(object):
                         self.draw_tracks_actions(img_orig, pred_tracks, frame_idx)
                         self.save_drawing(path, img_orig, vid_cap)
 
-                # track_ids = tracks[:, 4]
-                # tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-                # self.online_action_detector.update_catches(tracks, frame_idx)
-                # self.save_frames_tracks_history(tracks, unmatched_tracks, unmatched_detections, frame_idx)
                 self.save_frames_tracks_history(pred_tracks, frame_idx)
 
         # self.detect_action_online(outpath)
@@ -613,26 +525,11 @@ class Solution(object):
 
     def wrapup_detections(self, boxes, crops, is_person):
         def get_features(crops):
-            # im_crops = []
-            # for crop in crops:
-                # x1,y1,x2,y2 = self._xywh_to_xyxy(box, ori_img)
-                # x1, y1, x2, y2 = box
-                # im = ori_img[int(y1):int(y2), int(x1):int(x2)]
-                # im_crops.append(im)
-            # if im_crops:
             features = self.extractor(crops)
-            # else:
-            #     features = np.array([])
+
             return features
 
         def _xyxy_to_tlwh(bbox_xyxy):
-            # x1,y1,x2,y2 = bbox_xyxy
-            #
-            # t = x1
-            # l = y1
-            # w = int(x2-x1)
-            # h = int(y2-y1)
-            # return t,l,w,h
             if isinstance(bbox_xyxy, np.ndarray):
                 bbox_tlwh = bbox_xyxy.copy()
             elif isinstance(bbox_xyxy, torch.Tensor):
@@ -640,7 +537,6 @@ class Solution(object):
             bbox_tlwh[:, 2:4] = bbox_xyxy[:, 2:4] - bbox_xyxy[:, :2]
             return bbox_tlwh
 
-        # bboxes_ltrb = dets[:, :4]
         features = get_features(crops)
         bbox_tlwh = _xyxy_to_tlwh(boxes)
 
@@ -648,51 +544,9 @@ class Solution(object):
             detections = [Detection(bbox_tlwh[i], features[i], 0) for i in range(bbox_tlwh.shape[0])]
         else:
             detections = [Detection(bbox_tlwh[i], features[i], 1) for i in range(bbox_tlwh.shape[0])]
-        # scores = np.array([d.confidence for d in detections])
-        # indices = np.flip(np.argsort(scores))
-        # detections = [detections[i] for i in indices]
 
         return detections
 
-    # def wrapup_detections(self, dets, orig_img):
-    #     def get_features(bboxes_ltrb, ori_img):
-    #         im_crops = []
-    #         for box in bboxes_ltrb:
-    #             # x1,y1,x2,y2 = self._xywh_to_xyxy(box, ori_img)
-    #             x1, y1, x2, y2 = box
-    #             im = ori_img[int(y1):int(y2), int(x1):int(x2)]
-    #             im_crops.append(im)
-    #         if im_crops:
-    #             features = self.extractor(im_crops)
-    #         else:
-    #             features = np.array([])
-    #         return features
-    #
-    #     def _xyxy_to_tlwh(bbox_xyxy):
-    #         # x1,y1,x2,y2 = bbox_xyxy
-    #         #
-    #         # t = x1
-    #         # l = y1
-    #         # w = int(x2-x1)
-    #         # h = int(y2-y1)
-    #         # return t,l,w,h
-    #         if isinstance(bbox_xyxy, np.ndarray):
-    #             bbox_tlwh = bbox_xyxy.copy()
-    #         elif isinstance(bbox_xyxy, torch.Tensor):
-    #             bbox_tlwh = bbox_xyxy.clone()
-    #         bbox_tlwh[:, 2:4] = bbox_xyxy[:, 2:4] - bbox_xyxy[:, :2]
-    #         return bbox_tlwh
-    #
-    #     bboxes_ltrb = dets[:, :4]
-    #     features = get_features(bboxes_ltrb, orig_img)
-    #     bbox_tlwh = _xyxy_to_tlwh(bboxes_ltrb)
-    #     detections = [Detection(bbox_tlwh[i], features[i]) for i,conf in enumerate(confs)]
-    #
-    #     # scores = np.array([d.confidence for d in detections])
-    #     # indices = np.flip(np.argsort(scores))
-    #     # detections = [detections[i] for i in indices]
-    #
-    #     return detections
 
     def get_crops(self, dets, ori_img):
         transform = transforms.Compose([
@@ -709,112 +563,6 @@ class Solution(object):
         return im_crops
 
 
-
-    # def run(self):
-    #     outpath = os.path.basename(self.opt.source)[:-4]
-    #     outpath = os.path.join(self.opt.output, outpath + '_out.csv')
-    #     # if not self.opt.debugging:
-    #     frame_idx = 0
-    #     for path, img_orig, vid_cap in self.dataset:
-    #         img_h, img_w, _ = img_orig.shape  # get image shape
-    #         gts = self.load_labels(frame_idx)
-    #         gts = torch.mul(gts, torch.tensor([1.0,1.0,img_w,img_h,img_w,img_h]))
-    #         gts_ltrb = self.cxcywh2xyxy(gts[:, 2:])
-    #         # ltrb, id, cls
-    #         gts = torch.cat((gts_ltrb, gts[:, 1:2], gts[:, 0:1]), 1)
-    #         if gts.shape[0] != 0:
-    #             gts_persons = torch.vstack([gt for gt in gts if self.isclose(gt[5], 0)])
-    #             gts_persons[:, 4] = 1
-    #             gts_balls = torch.vstack([gt for gt in gts if self.isclose(gt[5], 1)])
-    #             gts_balls[:, 4] = 1
-    #             self.deepsort.tracker_person.set_track_limit(gts_persons.shape[0])
-    #             self.deepsort.tracker_ball.set_track_limit(gts_balls.shape[0])
-    #             self.deepsort.tracker_person.set_track_start(0)
-    #             self.deepsort.tracker_ball.set_track_start(gts_persons.shape[0])
-    #
-    #             self.crop_activity_region.update_memory(gts[:, :4])
-    #
-    #
-    #             gt_tracks, unmatched_tracks, unmatched_detections = self.deepsort.update(gts_persons, gts_balls, img_orig)
-    #             self.track_id_correction(gts, gt_tracks, img_h, img_w)
-    #             track_ids = gt_tracks[:, 4]
-    #             gt_tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-    #             unmatched_tracks = []
-    #             self.online_action_detector.update_catches(gt_tracks, frame_idx)
-    #             if len(gt_tracks) > 0:
-    #                 if self.opt.save_img:
-    #                     self.draw_tracks_actions(img_orig, gt_tracks, frame_idx)
-    #                     self.save_drawing(path, img_orig, vid_cap)
-    #             self.save_frames_tracks_history(gt_tracks, unmatched_tracks, unmatched_detections, frame_idx)
-    #         else:
-    #             # Sampling at a fixed rate
-    #             if frame_idx % self.frame_sample_rate != 0:
-    #                 frame_idx += 1
-    #                 continue
-    #
-    #             '''
-    #             Crop the activity region from the latest prediction
-    #             (x_min, y_min) and (x_max, y_max) are the coords of the minimum bounding rectangle
-    #             '''
-    #             latest_det = self.crop_activity_region.latest_det
-    #             img_crop, dx, dy = self.crop_activity_region.crop_image(img_orig, latest_det)
-    #             img_crop_letterbox = self.crop_activity_region.letterbox_image(img_crop, imgsz=self.imgsz, stride=self.stride)
-    #
-    #             preds = self.yolo(img_crop_letterbox)
-    #             preds = postprocess(preds, self.grid, self.yolo)
-    #
-    #             # Apply NMS
-    #             dets = non_max_suppression(preds[0], self.opt.conf_thres, self.opt.iou_thres, classes=None, agnostic=False)[0]
-    #
-    #             if dets.numel() == 0:
-    #                 frame_idx += 1
-    #                 continue
-    #
-    #             person_dets = dets[dets[:, 5] == 0].clone()
-    #             ball_dets = dets[dets[:, 5] == 1].clone()
-    #             if person_dets.shape[0] != 0 and ball_dets.shape[0] != 0:
-    #                 max_ball_height = (person_dets.mean(dim=0)[3] - person_dets.mean(dim=0)[1]) * 0.6
-    #                 ball_dets = ball_dets[(ball_dets[:, 3] - ball_dets[:, 1]) < max_ball_height]
-    #                 dets = torch.cat((person_dets, ball_dets), dim=0)
-    #
-    #             dets = self.crop_activity_region.coords_final2orig(dets, img_crop_letterbox, img_crop, dx, dy)
-    #             self.crop_activity_region.update_memory(dets[:, :4])
-    #
-    #             # if len(clses_person) < gts_persons.shape[0]:
-    #             self.crop_activity_region.set_extra_ratio(0.1)
-    #             # else:
-    #             #     self.crop_activity_region.set_extra_ratio(0.2)
-    #
-    #             dets_person, dets_ball = dets[dets[:,5]==0,:], dets[dets[:,5]==1,:]
-    #
-    #             if dets_ball.numel() == 0 or dets_person.numel() == 0:
-    #                 frame_idx += 1
-    #                 continue
-    #
-    #             bp_collistion_matx = self.collision(dets_ball.detach().numpy(), dets_person.detach().numpy()).reshape(
-    #                                                                 (dets_ball.shape[0], dets_person.shape[0]))
-    #             if not np.any(bp_collistion_matx):
-    #                 print(frame_idx)
-    #                 frame_idx += 1
-    #                 continue
-    #
-    #             tracks, unmatched_tracks, unmatched_detections = self.deepsort.update(dets_person, dets_ball, img_orig)
-    #
-    #
-    #             if len(tracks) > 0:
-    #                 track_ids = tracks[:, 4]
-    #                 tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-    #                 self.online_action_detector.update_catches(tracks, frame_idx)
-    #                 if self.opt.save_img:
-    #                     self.draw_tracks_actions(img_orig, tracks, frame_idx)
-    #                     self.save_drawing(path, img_orig, vid_cap)
-    #
-    #             self.save_frames_tracks_history(tracks, unmatched_tracks, unmatched_detections, frame_idx)
-    #         frame_idx += 1
-    #
-    #     self.detect_action_online(outpath)
-    #     # self.detect_action_offline(outpath)
-
     def save_online_detection(self):
         save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'online_action_detection')
         if not os.path.exists(save_path):
@@ -828,26 +576,16 @@ class Solution(object):
         if not os.path.exists(save_path):
             os.makedirs(save_path)
         save_pkl(tracks_history, os.path.join(save_path, 'tracks_history.pkl'))
-        save_pkl(unmatched_tracks_history, os.path.join(save_path, 'unmatched_tracks_history.pkl'))
-        save_pkl(unmatched_detections_history, os.path.join(save_path, 'unmatched_detections_history.pkl'))
         save_pkl(frames_idx_history, os.path.join(save_path, 'frames_idx_history.pkl'))
 
 
     def detect_action_offline(self, outpath):
-        # if not self.tracks_history or not self.frames_idx_history:
-        #     save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'offline_action_detection')
-        #     self.tracks_history = load_pkl(os.path.join(save_path, 'tracks_history.pkl'))
-        #     self.frames_idx_history = load_pkl(os.path.join(save_path, 'frames_idx_history.pkl'))
         self.offline_action_detector = OfflineActionDetector(self.tracks_history, self.frames_idx_history,
                                                              ball_ids=self.gt_bids, person_ids=self.gt_pids)
         self.offline_action_detector.write_catches(outpath)
 
 
     def detect_action_online(self, outpath):
-        # if not self.online_action_detector.history_collision_summary or not self.online_action_detector.latest_bp_assoc_dct:
-        #     save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'online_action_detection')
-        #     self.online_action_detector.history_collision_summary = load_pkl(os.path.join(save_path, 'history_collision_summary.pkl'))
-        #     self.online_action_detector.latest_bp_assoc_dct = load_pkl(os.path.join(save_path, 'latest_bp_assoc_dct.pkl'))
         self.online_action_detector.write_catches(outpath)
 
 
@@ -875,15 +613,6 @@ class Solution(object):
                 y2 += offset[1]
 
                 id = int(ids[i])
-
-                # color = compute_color_for_labels(id)
-                # label = '%s %d %s %d' % (ball_detect[i], id, cls_names[i], scores[i])
-                # status_label = '%s %d%%' % (ball_detect[i], scores[i])
-                # status_label = '%d%%' % (scores[i])
-                # status_size = img_h // status_scale
-                # status_text_size = cv2.getTextSize(status_label, cv2.FONT_HERSHEY_PLAIN, fontScale=status_size, thickness=2)[0]
-                # cv2.rectangle(img, (x1, y1), (x1 + status_text_size[0] + 1, y1 + status_text_size[1] + 1), color=[0, 0, 0], thickness=-1)
-                # cv2.putText(img, text=status_label, org=(x1, y1 + status_text_size[1] + 1), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=status_size, color=[255, 255, 255], thickness=2)
 
                 if clses[i] == ObjectCategory.BALL.value:
                     id_size = img_h // id_scale_ball
