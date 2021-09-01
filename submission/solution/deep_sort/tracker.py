@@ -63,13 +63,13 @@ class Tracker:
             self.tracks[track_idx].update(detections[detection_idx])
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
-        if self.track_count < self.track_limit:
-            for detection_idx in unmatched_detections:
-                self._initiate_track(detections[detection_idx])
-                self.track_count += 1
+        # if self.track_count < self.track_limit:
+        #     for detection_idx in unmatched_detections:
+        #         self._initiate_track(detections[detection_idx])
+        #         self.track_count += 1
 
         # Update distance metric.
-        active_targets = [t.track_id for t in self.tracks]
+        # active_targets = [t.track_id for t in self.tracks]
         features, targets = [], []
         for track in self.tracks:
             features += track.features
@@ -150,7 +150,31 @@ class Tracker:
 
 
 
-    # def initiate_tracks(self, gt_tracks_dct):
-    #     for detection_idx in unmatched_detections:
-    #         self._initiate_track(detections[detection_idx])
-    #         self.track_count += 1
+    def initiate_tracks(self, gt_tracks_dct, cls):
+        for id, detections in gt_tracks_dct.items():
+            det_init = detections[0]
+            mean = det_init.to_xyah()
+            self.tracks.append(Track(
+                mean, id, cls, det_init.feature))
+
+        features, targets = [], []
+        for track in self.tracks:
+            features += track.features
+            targets += [track.track_id for _ in track.features]
+            track.features = []
+        self.metric.partial_fit(
+            np.asarray(features), np.asarray(targets))
+
+        features, targets = [], []
+        for track in self.tracks:
+            detections = gt_tracks_dct[track.track_id]
+            for det in detections:
+                features.append(det.feature)
+                targets.append(track.track_id)
+            # track.features = []
+        self.metric.init_cache(
+            np.asarray(features), np.asarray(targets))
+
+        # for detection_idx in unmatched_detections:
+        #     self._initiate_track(detections[detection_idx])
+        #     self.track_count += 1

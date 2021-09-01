@@ -31,12 +31,12 @@ class DeepSort(object):
             # unmatched_ball_tracks, unmatched_ball_detections = self.tracker_ball.update(dets_ball, orig_img, self.extractor)
             unmatched_ball_tracks, unmatched_ball_detections = self.tracker_ball.update(ball_detections)
             tracks = self.tracker_person.tracks + self.tracker_ball.tracks
-            unmatched_tracks = unmatched_person_tracks + unmatched_ball_tracks
-            unmatched_detections = unmatched_person_detections + unmatched_ball_detections
+            # unmatched_tracks = unmatched_person_tracks + unmatched_ball_tracks
+            # unmatched_detections = unmatched_person_detections + unmatched_ball_detections
         else:
             tracks = self.tracker_person.tracks
-            unmatched_tracks = unmatched_person_tracks
-            unmatched_detections = unmatched_person_detections
+            # unmatched_tracks = unmatched_person_tracks
+            # unmatched_detections = unmatched_person_detections
 
 
         # output bbox identities
@@ -50,7 +50,7 @@ class DeepSort(object):
         if len(active_tracks) > 0:
             active_tracks = np.stack(active_tracks, axis=0)
 
-        return active_tracks, unmatched_tracks, unmatched_detections
+        return active_tracks
 
     def _tlwh_to_xyxy(self, bbox_tlwh, img):
         """

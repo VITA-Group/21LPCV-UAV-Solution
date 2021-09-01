@@ -350,13 +350,13 @@ class Solution(object):
         # if not self.opt.debugging:
         frame_idx = 0
 
-        img_dct = {}
+        # img_dct = {}
         for path, img_orig, vid_cap in self.dataset:
             img_h, img_w, _ = img_orig.shape  # get image shape
             # if frame_idx == 1620:
             #     print(frame_idx)
             if frame_idx in self.gt_frames:
-                img_dct[frame_idx] = img_orig
+                # img_dct[frame_idx] = img_orig
                 gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
                 # Remove empty annotation with zeros as placeholder
                 gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
@@ -413,7 +413,7 @@ class Solution(object):
                 if frame_idx % self.frame_sample_rate != 0:
                     frame_idx += 1
                     continue
-                img_dct[frame_idx] = img_orig
+                # img_dct[frame_idx] = img_orig
 
                 '''
                 Crop the activity region from the latest prediction
@@ -493,32 +493,81 @@ class Solution(object):
 
             frame_idx += 1
 
+        gt_btracks_dct, gt_ptracks_dct = {}, {}
+        gt_bdets_dct, gt_pdets_dct = {}, {}
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
-                img_orig = img_dct[frame_idx]
+                # img_orig = img_dct[frame_idx]
                 print(frame_idx)
                 # person_detections, ball_detections = frame_detections_history[frame_idx]
                 gt_crops_person, gt_boxes_person = self.cache.fetch(frame_idx, is_person=True)
+                valid_idx = ~np.all(gt_boxes_person == 0, axis=1)
+                gt_boxes_person = gt_boxes_person[valid_idx, ...]
+                gt_crops_person = gt_crops_person[valid_idx, ...]
+                selected_pids = np.array(self.gt_pids)[valid_idx]
+
                 gt_crops_ball, gt_boxes_ball = self.cache.fetch(frame_idx, is_person=False)
+                valid_idx = ~np.all(gt_boxes_ball == 0, axis=1)
+                gt_boxes_ball = gt_boxes_ball[valid_idx, ...]
+                gt_crops_ball = gt_crops_ball[valid_idx, ...]
+                selected_bids = np.array(self.gt_bids)[valid_idx]
 
                 person_detections = self.wrapup_detections(boxes=gt_boxes_person, crops=gt_crops_person, is_person=True)
                 ball_detections = self.wrapup_detections(boxes=gt_boxes_ball, crops=gt_crops_ball, is_person=False)
 
-                gt_tracks, unmatched_tracks, unmatched_detections = self.deepsort.update(person_detections, ball_detections, img_orig)
+                gt_pdets_dct[frame_idx] = person_detections
+                gt_bdets_dct[frame_idx] = ball_detections
 
-                gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
+                for i, pid in enumerate(selected_pids):
+                    if pid in gt_ptracks_dct:
+                        gt_ptracks_dct[pid].append(person_detections[i])
+                    else:
+                        gt_ptracks_dct[pid] = []
+
+                for i, bid in enumerate(selected_bids):
+                    if bid in gt_btracks_dct:
+                        gt_btracks_dct[bid].append(ball_detections[i])
+                    else:
+                        gt_btracks_dct[bid] = []
+
+        self.deepsort.tracker_person.initiate_tracks(gt_ptracks_dct, 0)
+        self.deepsort.tracker_ball.initiate_tracks(gt_btracks_dct, 1)
+
+
+        for frame_idx in range(self.dataset.nframes):
+            if frame_idx in self.gt_frames:
+                # img_orig = img_dct[frame_idx]
+                print(frame_idx)
+                # # person_detections, ball_detections = frame_detections_history[frame_idx]
+                # gt_crops_person, gt_boxes_person = self.cache.fetch(frame_idx, is_person=True)
+                # valid_idx = ~np.all(gt_boxes_person == 0, axis=1)
+                # det_boxes_person = gt_boxes_person[valid_idx, ...]
+                # det_crops_person = det_crops_person[valid_idx, ...]
+                # selected_pids = np.array(self.gt_pids)[valid_idx]
+
+                # gt_crops_ball, gt_boxes_ball = self.cache.fetch(frame_idx, is_person=False)
+                # valid_idx = ~np.all(gt_boxes_ball == 0, axis=1)
+                # selected_bids = np.array(self.gt_bids)[valid_idx]
+
+                # person_detections = self.wrapup_detections(boxes=gt_boxes_person, crops=gt_crops_person, is_person=True)
+                # ball_detections = self.wrapup_detections(boxes=gt_boxes_ball, crops=gt_crops_ball, is_person=False)
+
+                person_detections, ball_detections = gt_pdets_dct[frame_idx], gt_bdets_dct[frame_idx]
+                gt_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
+
+                # gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
                 # Remove empty annotation with zeros as placeholder
-                gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
-                gts_scaled = np.multiply(gts_raw, np.array([1.0, 1.0, img_w, img_h, img_w, img_h]))
-                gts_ltrb = self.cxcywh2xyxy(gts_scaled[:, 2:], img_orig)
+                # gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
+                # gts_scaled = np.multiply(gts_raw, np.array([1.0, 1.0, img_w, img_h, img_w, img_h]))
+                # gts_ltrb = self.cxcywh2xyxy(gts_scaled[:, 2:], img_orig)
                 # ltrb, id, cls
-                gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
+                # gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
 
-                self.track_id_correction(gts, gt_tracks, img_h, img_w)
-                track_ids = gt_tracks[:, 4]
-                gt_tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-                unmatched_tracks = []
-                self.online_action_detector.update_catches(gt_tracks, frame_idx)
+                # self.track_id_correction(gts, gt_tracks, img_h, img_w)
+                # track_ids = gt_tracks[:, 4]
+                # gt_tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
+
+                # self.online_action_detector.update_catches(gt_tracks, frame_idx)
                 # self.save_frames_tracks_history(gt_tracks, unmatched_tracks, unmatched_detections, frame_idx)
                 if len(gt_tracks) > 0:
                     if self.opt.save_img:
@@ -526,11 +575,9 @@ class Solution(object):
                         self.save_drawing(path, img_orig, vid_cap)
                 self.save_frames_tracks_history(gt_tracks, frame_idx)
 
-
-        for frame_idx in range(self.dataset.nframes):
-            if frame_idx in self.key_frames:
+            elif frame_idx in self.key_frames:
                 print(frame_idx)
-                img_orig = img_dct[frame_idx]
+                # img_orig = img_dct[frame_idx]
 
                 det_crops_person, det_boxes_person = self.cache.fetch(frame_idx, is_person=True)
                 valid_idx = ~np.all(det_boxes_person == 0, axis=1)
@@ -544,21 +591,21 @@ class Solution(object):
 
                 person_detections = self.wrapup_detections(det_boxes_person, det_crops_person, is_person=True)
                 ball_detections = self.wrapup_detections(det_boxes_ball, det_crops_ball, is_person=False)
-                tracks, unmatched_tracks, unmatched_detections = self.deepsort.update(person_detections, ball_detections, img_orig)
+                pred_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
 
-                if len(tracks) > 0:
-                    track_ids = tracks[:, 4]
-                    tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-                    self.online_action_detector.update_catches(tracks, frame_idx)
+                if len(pred_tracks) > 0:
+                    track_ids = pred_tracks[:, 4]
+                    pred_tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
+                    self.online_action_detector.update_catches(pred_tracks, frame_idx)
                     if self.opt.save_img:
-                        self.draw_tracks_actions(img_orig, tracks, frame_idx)
+                        self.draw_tracks_actions(img_orig, pred_tracks, frame_idx)
                         self.save_drawing(path, img_orig, vid_cap)
 
                 # track_ids = tracks[:, 4]
                 # tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
                 # self.online_action_detector.update_catches(tracks, frame_idx)
                 # self.save_frames_tracks_history(tracks, unmatched_tracks, unmatched_detections, frame_idx)
-                self.save_frames_tracks_history(tracks, frame_idx)
+                self.save_frames_tracks_history(pred_tracks, frame_idx)
 
         # self.detect_action_online(outpath)
         self.detect_action_offline(outpath)
