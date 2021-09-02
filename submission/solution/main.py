@@ -22,7 +22,7 @@ from deep_sort import DeepSort
 
 import pandas as pd
 
-from online_action_detector import OnlineActionDetector
+# from online_action_detector import OnlineActionDetector
 from offline_action_detector import OfflineActionDetector
 
 from enums import ObjectCategory
@@ -113,7 +113,7 @@ class CropsBoxesCache(object):
         if frame_idx in self.key_frames:
             pos = self.key_frames.index(frame_idx)
             if is_person:
-                self.key_persons_crop_cache[pos][:num_detections]= crops
+                self.key_persons_crop_cache[pos][:num_detections] = crops
                 self.key_persons_box_cache[pos][:num_detections] = boxes
             else:
                 self.key_balls_crop_cache[pos][:num_detections] = crops
@@ -147,19 +147,73 @@ class CropsBoxesCache(object):
         return crops, boxes
 
 
+class Draw(object):
+    @staticmethod
+    def draw_frame_idx(img, frame_idx):
+        framestr = 'Frame {frame}'
+        text = framestr.format(frame=frame_idx)
+        t_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_PLAIN, 2, 2)[0]
+        cv2.putText(img, text, (0, (t_size[1] + 10)), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
+
+    @staticmethod
+    def compute_color_for_labels(label):
+        """
+        Simple function that adds fixed color depending on the class
+        """
+        palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
+        color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
+        return tuple(color)
+
+    @staticmethod
+    def draw_tracks(img, tracks, frame_idx):
+
+        # bboxes_xyxy, ids, clses, scores = tracks[:, :4], tracks[:, 4], tracks[:, 5], tracks[:, 6]
+        bboxes_xyxy, ids, clses = tracks[:, :4], tracks[:, 4], tracks[:, 5]
+
+        img_h, img_w, _ = img.shape
+        status_scale, id_scale_ball, id_scale_person = 1080, 270, 135
+        for i, box in enumerate(bboxes_xyxy):
+            x1, y1, x2, y2 = [int(coord) for coord in box]
+            id = int(ids[i])
+            if clses[i] == ObjectCategory.BALL.value:
+                id_size = img_h // id_scale_ball
+                box_color = [0, 255, 0]  # Green
+                id_color = [0, 255, 255] # Yellow
+            else:
+                id_size = img_h // id_scale_person
+                box_color = [255, 0, 0]  # Blue
+                id_color = [0, 0, 255]   # Red
+            cv2.rectangle(img, (x1, y1), (x2, y2), color=box_color, thickness=3)
+            id_text_size = cv2.getTextSize(str(id), cv2.FONT_HERSHEY_PLAIN, fontScale=id_size, thickness=4)[0]
+            textX, textY = x1 + ((x2 - x1) - id_text_size[0]) // 2, y1 + ((y2 - y1) + id_text_size[1]) // 2
+            cv2.putText(img, text=str(id), org=(textX, textY), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=id_size, color=id_color, thickness=4)
+        Draw.draw_frame_idx(img, frame_idx)
+
+    @staticmethod
+    def draw_detections(img, dets, frame_idx):
+        bboxes_xyxy, scores, clses = dets[:, :4], dets[:, 4], dets[:, 5]
+        img_h, img_w, _ = img.shape
+        text_scale = 540
+        for i, box in enumerate(bboxes_xyxy):
+            x1, y1, x2, y2 = [int(coord) for coord in box]
+            score_text = '%d%%' % int(scores[i]*100)
+            text_size = img_h // text_scale
+            score_text_size = cv2.getTextSize(score_text, cv2.FONT_HERSHEY_PLAIN, fontScale=text_size, thickness=2)[0]
+            cv2.rectangle(img, (x1, y1), (x1 + score_text_size[0] + 1, y1 + score_text_size[1] + 1), color=[0, 0, 0], thickness=-1)
+            cv2.putText(img, text=score_text, org=(x1, y1 + score_text_size[1] + 1), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=text_size, color=[255, 255, 255], thickness=2)
+            if clses[i] == 'sports ball':
+                box_color = [0, 255, 0]  # Green
+            else:
+                box_color = [255, 0, 0]  # Blue
+            cv2.rectangle(img, (x1, y1), (x2, y2), color=box_color, thickness=3)
+        Draw.draw_frame_idx(img, frame_idx)
+
+
 class Solution(object):
     def __init__(self, opt):
         self.opt = opt
         self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths)
-
-
         self.frame_sample_rate = opt.skip_frames  # Sample rate used to pick the frame at a fixed temporal stride
-        self.current_file_name = opt.groundtruths  # The groundtruth file used to give the initialization and calibration of the tracks
-        self.current_file_data = self.init_pd_csv_reader(opt.groundtruths)
-
-
-        self.track_gt_idMap = {}  # The mapping between track ID and groundtruth ID
-        self.vid_path, self.vid_writer = None, None  # The video that visualizes tracking results
 
         # make new output folder
         if not os.path.exists(opt.output):
@@ -179,8 +233,8 @@ class Solution(object):
         '''
         self.grid = torch.load(os.path.join(dir_path, 'weights/grid.pt'), map_location='cpu')
         self.yolo = torch.jit.load(opt.yolo_weights, map_location='cpu')
-        self.online_action_detector = OnlineActionDetector(ball_ids=self.gt_bids,
-                                                           person_ids=self.gt_pids)
+        # self.online_action_detector = OnlineActionDetector(ball_ids=self.gt_bids,
+        #                                                    person_ids=self.gt_pids)
 
         '''
         Initialize Dataloader
@@ -205,6 +259,14 @@ class Solution(object):
         self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % self.frame_sample_rate == 0]
         self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids))
 
+        self.img_dct = {}
+
+        if opt.save_img:
+            save_path = str(Path(self.opt.output) / Path(self.dataset.files[0]).name)
+            fps, w, h = self.dataset.cap.get(cv2.CAP_PROP_FPS), int(self.dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
+                self.dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.opt.fourcc), fps, (w, h))
+
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
         tracks_ltwh = np.zeros_like(tracks[:, :6], dtype=int)
@@ -228,24 +290,19 @@ class Solution(object):
         )
         return bp_collistion_matx
 
-    def init_pd_csv_reader(self, file_name):
-        if not os.path.exists(file_name):
-            print("The file", file_name, "doesn't exist.")
-            exit(1)
-        current_file_data = pd.read_csv(file_name, sep=',')
-        return current_file_data
-
-    def load_labels(self, frame_number=-1):
-        frame = self.current_file_data[(self.current_file_data["Frame"] == frame_number)]
-        pt_frame = torch.tensor(frame[["Class", "ID", "X", "Y", "Width", "Height"]].values)
-        return pt_frame
-
     def read_csv_gt_tracks(self, filename):
+        def init_pd_csv_reader(file_name):
+            if not os.path.exists(file_name):
+                print("The file", file_name, "doesn't exist.")
+                exit(1)
+            current_file_data = pd.read_csv(file_name, sep=',')
+            return current_file_data
+
         def load_labels(csv_file_data, frame_number=-1):
             frame = csv_file_data[(csv_file_data["Frame"] == frame_number)]
             return frame[["Class", "ID", "X", "Y", "Width", "Height"]].values
 
-        csv_file_data = self.init_pd_csv_reader(filename)
+        csv_file_data = init_pd_csv_reader(filename)
         unique_frames = np.sort(np.unique(csv_file_data["Frame"].to_numpy())).tolist()
         unique_ids = np.sort(np.unique(csv_file_data["ID"].to_numpy()))
 
@@ -303,7 +360,8 @@ class Solution(object):
         for path, img_orig, vid_cap in self.dataset:
             img_h, img_w, _ = img_orig.shape  # get image shape
             if frame_idx in self.gt_frames:
-                # img_dct[frame_idx] = img_orig
+                if self.opt.save_img:
+                    self.img_dct[frame_idx] = img_orig
                 gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
                 # Remove empty annotation with zeros as placeholder
                 gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
@@ -330,8 +388,8 @@ class Solution(object):
                 if frame_idx % self.frame_sample_rate != 0:
                     frame_idx += 1
                     continue
-                # img_dct[frame_idx] = img_orig
-
+                if self.opt.save_img:
+                    self.img_dct[frame_idx] = img_orig
                 '''
                 Crop the activity region from the latest prediction
                 (x_min, y_min) and (x_max, y_max) are the coords of the minimum bounding rectangle
@@ -431,14 +489,14 @@ class Solution(object):
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
                 # print(frame_idx)
-
                 person_detections, ball_detections = gt_pdets_dct[frame_idx], gt_bdets_dct[frame_idx]
                 gt_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
 
-                if len(gt_tracks) > 0:
-                    if self.opt.save_img:
-                        self.draw_tracks_actions(img_orig, gt_tracks, frame_idx)
-                        self.save_drawing(path, img_orig, vid_cap)
+                if len(gt_tracks) > 0 and self.opt.save_img:
+                    # self.online_action_detector.update_catches(gt_tracks, frame_idx)
+                    img_orig = self.img_dct[frame_idx]
+                    Draw.draw_tracks(img_orig, gt_tracks, frame_idx)
+                    self.vid_writer.write(img_orig)
                 self.save_frames_tracks_history(gt_tracks, frame_idx)
 
             elif frame_idx in self.key_frames:
@@ -459,14 +517,11 @@ class Solution(object):
                 ball_detections = self.wrapup_detections(det_boxes_ball, det_crops_ball, is_person=False)
                 pred_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
 
-                if len(pred_tracks) > 0:
-                    track_ids = pred_tracks[:, 4]
-                    pred_tracks[:, 4] = [int(self.track_gt_idMap[id]) if id in self.track_gt_idMap else id for id in track_ids]
-                    self.online_action_detector.update_catches(pred_tracks, frame_idx)
-                    if self.opt.save_img:
-                        self.draw_tracks_actions(img_orig, pred_tracks, frame_idx)
-                        self.save_drawing(path, img_orig, vid_cap)
-
+                if len(pred_tracks) > 0 and self.opt.save_img:
+                    # self.online_action_detector.update_catches(pred_tracks, frame_idx)
+                    img_orig = self.img_dct[frame_idx]
+                    Draw.draw_tracks(img_orig, pred_tracks, frame_idx)
+                    self.vid_writer.write(img_orig)
                 self.save_frames_tracks_history(pred_tracks, frame_idx)
 
         # self.detect_action_online(outpath)
@@ -533,100 +588,6 @@ class Solution(object):
     def detect_action_online(self, outpath):
         self.online_action_detector.write_catches(outpath)
 
-    # def draw_tracks_actions(self, img_orig, tracks, ball_detect, frame_idx):
-    def draw_tracks_actions(self, img_orig, tracks, frame_idx):
-        def compute_color_for_labels(label):
-            """
-            Simple function that adds fixed color depending on the class
-            """
-            palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
-            color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
-            return tuple(color)
-
-        def draw_boxes(img, tracks, offset=(0, 0)):
-            # bboxes_xyxy, ids, clses, scores = tracks[:, :4], tracks[:, 4], tracks[:, 5], tracks[:, 6]
-            bboxes_xyxy, ids, clses = tracks[:, :4], tracks[:, 4], tracks[:, 5]
-
-            img_h, img_w, _ = img.shape
-            status_scale, id_scale_ball, id_scale_person = 1080, 270, 135
-            for i, box in enumerate(bboxes_xyxy):
-                x1, y1, x2, y2 = [int(coord) for coord in box]
-                x1 += offset[0]
-                x2 += offset[0]
-                y1 += offset[1]
-                y2 += offset[1]
-
-                id = int(ids[i])
-
-                if clses[i] == ObjectCategory.BALL.value:
-                    id_size = img_h // id_scale_ball
-                    box_color = [0, 255, 0]  # Green
-                    id_color = [0, 255, 255] # Yellow
-                else:
-                    id_size = img_h // id_scale_person
-                    box_color = [255, 0, 0]  # Blue
-                    id_color = [0, 0, 255]   # Red
-
-                cv2.rectangle(img, (x1, y1), (x2, y2), color=box_color, thickness=3)
-                id_text_size = cv2.getTextSize(str(id), cv2.FONT_HERSHEY_PLAIN, fontScale=id_size, thickness=4)[0]
-                textX, textY = x1 + ((x2 - x1) - id_text_size[0]) // 2, y1 + ((y2 - y1) + id_text_size[1]) // 2
-                cv2.putText(img, text=str(id), org=(textX, textY), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=id_size, color=id_color, thickness=4)
-
-        def draw_frame_idx(img, frame_idx):
-            framestr = 'Frame {frame}'
-            text = framestr.format(frame=frame_idx)
-            t_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_PLAIN, 2, 2)[0]
-            cv2.putText(img, text, (0, (t_size[1] + 10)), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
-
-        draw_boxes(img_orig, tracks)
-        draw_frame_idx(img_orig, frame_idx)
-
-    def draw_det_bboxes(self, img_orig, dets, frame_idx):
-        def draw_boxes(img, dets, offset=(0, 0)):
-            bboxes_xyxy, scores, clses = dets[:, :4], dets[:, 4], dets[:, 5]
-            img_h, img_w, _ = img.shape
-            text_scale = 540
-            for i, box in enumerate(bboxes_xyxy):
-                x1, y1, x2, y2 = [int(coord) for coord in box]
-                x1 += offset[0]
-                x2 += offset[0]
-                y1 += offset[1]
-                y2 += offset[1]
-
-                score_text = '%d%%' % int(scores[i]*100)
-                text_size = img_h // text_scale
-                score_text_size = cv2.getTextSize(score_text, cv2.FONT_HERSHEY_PLAIN, fontScale=text_size, thickness=2)[0]
-                cv2.rectangle(img, (x1, y1), (x1 + score_text_size[0] + 1, y1 + score_text_size[1] + 1), color=[0, 0, 0], thickness=-1)
-                cv2.putText(img, text=score_text, org=(x1, y1 + score_text_size[1] + 1), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=text_size, color=[255, 255, 255], thickness=2)
-
-                if clses[i] == 'sports ball':
-                    box_color = [0, 255, 0]  # Green
-                else:
-                    box_color = [255, 0, 0]  # Blue
-
-                cv2.rectangle(img, (x1, y1), (x2, y2), color=box_color, thickness=3)
-
-        def draw_frame_idx(img, frame_idx):
-            framestr = 'Frame {frame}'
-            text = framestr.format(frame=frame_idx)
-            t_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_PLAIN, 2, 2)[0]
-            cv2.putText(img, text, (0, (t_size[1] + 10)), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
-
-        draw_boxes(img_orig, dets)
-        draw_frame_idx(img_orig, frame_idx)
-
-    def save_drawing(self, path, img_orig, vid_cap):
-        save_path = str(Path(self.opt.output) / Path(path).name)
-        if self.vid_path != save_path:  # new video
-            self.vid_path = save_path
-            if isinstance(self.vid_writer, cv2.VideoWriter):
-                self.vid_writer.release()  # release previous video writer
-
-            # fps, w, h = vid_cap.get(cv2.CAP_PROP_FPS), int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
-            #     vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps, w, h = 60, 1920, 1080
-            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.opt.fourcc), fps, (w, h))
-        self.vid_writer.write(img_orig)
 
 
 def default_parser():

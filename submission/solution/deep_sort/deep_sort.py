@@ -36,12 +36,14 @@ class DeepSort(object):
             if track.is_missed():
                 continue
             box = track.to_tlwh()
-            x1,y1,x2,y2 = self._tlwh_to_xyxy(box, orig_img)
-            active_tracks.append(np.array([x1,y1,x2,y2, track.track_id, track.cls], dtype=np.int))
-        if len(active_tracks) > 0:
+            x1, y1, x2, y2 = self._tlwh_to_xyxy(box, orig_img)
+            active_tracks.append(np.array([x1, y1, x2, y2, track.track_id, track.cls], dtype=np.int))
+
+        if active_tracks:
             active_tracks = np.stack(active_tracks, axis=0)
 
         return active_tracks
+
 
     def _tlwh_to_xyxy(self, bbox_tlwh, img):
         """

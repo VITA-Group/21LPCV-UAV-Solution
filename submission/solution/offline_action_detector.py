@@ -163,17 +163,6 @@ class OfflineActionDetector(object):
                 bp_ids_history_dct[frame_idx] = (ball_ids, person_ids)
         return key_frames, bp_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct
 
-import pickle
-
-def save_dict(dct, filename):
-    with open(filename, 'wb') as f:
-        pickle.dump(dct, f)
-
-def load_dict(filename):
-    with open(filename, 'rb') as f:
-        dct = pickle.load(f)
-    return dct
-
 
 if __name__ == '__main__':
     vid_name = '7p3b_02M'
