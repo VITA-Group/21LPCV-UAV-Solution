@@ -29,7 +29,7 @@ from enums import ObjectCategory
 from detection import Detection
 from feature_extractor import Extractor
 import torchvision.transforms as transforms
-
+from torchvision.transforms import InterpolationMode
 
 torch.backends.quantized.engine = 'qnnpack'
 
@@ -204,11 +204,6 @@ class Solution(object):
         key_frames = np.arange(self.dataset.nframes).tolist()
         self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % self.frame_sample_rate == 0]
         self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids))
-    '''
-    Check whether two float number is numerically close to each other
-    '''
-    def isclose(self, a, b, rel_tol=1e-09, abs_tol=0.0):
-        return abs(a - b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
@@ -219,7 +214,6 @@ class Solution(object):
 
         self.tracks_history.append(tracks_ltwh)
         self.frames_idx_history.append(frame_idx)
-
 
     def collision(self, ball_dets, person_dets):
         balls_center = 0.5 * (ball_dets[:, :2] + ball_dets[:, 2:4])
@@ -234,7 +228,6 @@ class Solution(object):
         )
         return bp_collistion_matx
 
-
     def init_pd_csv_reader(self, file_name):
         if not os.path.exists(file_name):
             print("The file", file_name, "doesn't exist.")
@@ -242,23 +235,10 @@ class Solution(object):
         current_file_data = pd.read_csv(file_name, sep=',')
         return current_file_data
 
-
     def load_labels(self, frame_number=-1):
         frame = self.current_file_data[(self.current_file_data["Frame"] == frame_number)]
         pt_frame = torch.tensor(frame[["Class", "ID", "X", "Y", "Width", "Height"]].values)
         return pt_frame
-
-
-    def track_id_correction(self, gts, tracks, img_h, img_w):
-        thresh = 0.005
-        for gt in xyxy2xywh(gts[:, :5]):
-            for track in xyxy2xywh(tracks[:, :5]):
-                if (abs(track[0] - gt[0]) / img_w < thresh) and (
-                        abs(track[1] - gt[1]) / img_h < thresh) and (
-                        abs(track[2] - gt[2]) / img_w < thresh) and (
-                        abs(track[3] - gt[3]) / img_w < thresh):
-                    self.track_gt_idMap[track[4]] = int(gt[4])
-
 
     def read_csv_gt_tracks(self, filename):
         def load_labels(csv_file_data, frame_number=-1):
@@ -271,7 +251,6 @@ class Solution(object):
 
         gt_labels = np.zeros((len(unique_frames), unique_ids.size, 6), dtype=np.float32)
 
-
         gt_pids, gt_bids = [], []
         for i, frame_idx in enumerate(unique_frames):
             labels = load_labels(csv_file_data, frame_number=frame_idx)
@@ -279,7 +258,6 @@ class Solution(object):
             gt_bids += labels[labels[:,0] == 1, 1].astype(int).tolist()
             gt_pids += labels[labels[:,0] == 0, 1].astype(int).tolist()
         return unique_frames, gt_labels, np.unique(gt_pids).tolist(), np.unique(gt_bids).tolist()
-
 
     def cxcywh2xyxy(self, bboxes_cxcywh, img):
         img_h, img_w, _ = img.shape  # get image shape
@@ -320,15 +298,10 @@ class Solution(object):
         outpath = os.path.basename(self.opt.source)[:-4]
         outpath = os.path.join(self.opt.output, outpath + '_out.csv')
 
-        frame_detections_history = {}
-        # if not self.opt.debugging:
         frame_idx = 0
 
-        # img_dct = {}
         for path, img_orig, vid_cap in self.dataset:
             img_h, img_w, _ = img_orig.shape  # get image shape
-            # if frame_idx == 1620:
-            #     print(frame_idx)
             if frame_idx in self.gt_frames:
                 # img_dct[frame_idx] = img_orig
                 gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
@@ -412,28 +385,8 @@ class Solution(object):
 
                 if dets_person.size > 0:
                     self.update_key_cache(dets_person, img_orig, frame_idx, len(self.gt_pids), is_person=True)
-                    # person_crops = self.get_crops(dets_person, img_orig)
-                    # scores = dets_person[:, 4]
-                    # indices = np.flip(np.argsort(scores))
-                    # sorted_person_crops = [person_crops[idx] for idx in indices]
-                    # sorted_person_crops = np.stack(sorted_person_crops, axis=0)
-                    # self.cache.update(frame_idx, sorted_person_crops, is_person=True)
-                    # person_detections = self.wrapup_detections(dets_person, img_orig)
-                # else:
-                #     person_detections = []
                 if dets_ball.size > 0:
                     self.update_key_cache(dets_ball, img_orig, frame_idx, len(self.gt_bids), is_person=False)
-                    # ball_crops = self.get_crops(dets_ball, img_orig)
-                    # scores = dets_ball[:, 4]
-                    # indices = np.flip(np.argsort(scores))
-                    # sorted_ball_crops = [ball_crops[idx] for idx in indices]
-                    # sorted_ball_crops = np.stack(sorted_ball_crops, axis=0)
-                    # self.cache.update(frame_idx, sorted_ball_crops, is_person=False)
-                    # ball_detections = self.wrapup_detections(dets_ball, img_orig)
-                # else:
-                #     ball_detections = []
-
-                # frame_detections_history[frame_idx] = (person_detections, ball_detections)
 
             frame_idx += 1
 
@@ -441,9 +394,6 @@ class Solution(object):
         gt_bdets_dct, gt_pdets_dct = {}, {}
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
-                # img_orig = img_dct[frame_idx]
-                # print(frame_idx)
-                # person_detections, ball_detections = frame_detections_history[frame_idx]
                 gt_crops_person, gt_boxes_person = self.cache.fetch(frame_idx, is_person=True)
                 valid_idx = ~np.all(gt_boxes_person == 0, axis=1)
                 gt_boxes_person = gt_boxes_person[valid_idx, ...]
@@ -547,11 +497,10 @@ class Solution(object):
 
         return detections
 
-
     def get_crops(self, dets, ori_img):
         transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize((128, 64), interpolation=3)
+            transforms.Resize((128, 64), interpolation=InterpolationMode.BICUBIC)
         ])
 
         bboxes_ltrb, confs, clses = dets[:, :4], dets[:, 4], dets[:, 5]
@@ -562,14 +511,12 @@ class Solution(object):
             im_crops.append(np.array(transform(im)))
         return im_crops
 
-
     def save_online_detection(self):
         save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'online_action_detection')
         if not os.path.exists(save_path):
             os.makedirs(save_path)
         save_pkl(self.online_action_detector.history_collision_summary, os.path.join(save_path, 'history_collision_summary.pkl'))
         save_pkl(self.online_action_detector.latest_bp_assoc_dct, os.path.join(save_path, 'latest_bp_assoc_dct.pkl'))
-
 
     def save_offline_detection(self, tracks_history, unmatched_tracks_history, unmatched_detections_history, frames_idx_history):
         save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'offline_action_detection')
@@ -578,16 +525,13 @@ class Solution(object):
         save_pkl(tracks_history, os.path.join(save_path, 'tracks_history.pkl'))
         save_pkl(frames_idx_history, os.path.join(save_path, 'frames_idx_history.pkl'))
 
-
     def detect_action_offline(self, outpath):
         self.offline_action_detector = OfflineActionDetector(self.tracks_history, self.frames_idx_history,
                                                              ball_ids=self.gt_bids, person_ids=self.gt_pids)
         self.offline_action_detector.write_catches(outpath)
 
-
     def detect_action_online(self, outpath):
         self.online_action_detector.write_catches(outpath)
-
 
     # def draw_tracks_actions(self, img_orig, tracks, ball_detect, frame_idx):
     def draw_tracks_actions(self, img_orig, tracks, frame_idx):
@@ -637,7 +581,6 @@ class Solution(object):
         draw_boxes(img_orig, tracks)
         draw_frame_idx(img_orig, frame_idx)
 
-
     def draw_det_bboxes(self, img_orig, dets, frame_idx):
         def draw_boxes(img, dets, offset=(0, 0)):
             bboxes_xyxy, scores, clses = dets[:, :4], dets[:, 4], dets[:, 5]
@@ -671,7 +614,6 @@ class Solution(object):
 
         draw_boxes(img_orig, dets)
         draw_frame_idx(img_orig, frame_idx)
-
 
     def save_drawing(self, path, img_orig, vid_cap):
         save_path = str(Path(self.opt.output) / Path(path).name)

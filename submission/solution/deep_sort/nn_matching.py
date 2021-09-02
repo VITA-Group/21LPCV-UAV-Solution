@@ -135,8 +135,8 @@ class NearestNeighborDistanceMetric(object):
         self.queue = {}
         self.cache = {}
 
-    def init_cache(self, features, target):
-        for feature, target in zip(features, target):
+    def init_cache(self, features, targets):
+        for feature, target in zip(features, targets):
             self.cache.setdefault(target, []).append(feature)
 
     def partial_fit(self, features, targets):

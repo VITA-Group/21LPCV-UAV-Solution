@@ -32,7 +32,7 @@ class OfflineActionDetector(object):
 
         gt_persons_id_arr = np.array(self.gt_persons_id)
         for frame_idx in key_frames:
-            print(frame_idx)
+            # print(frame_idx)
             # bp_dist_matx  = bp_dist_history_dct[frame_idx]
             bp_collistion_matx = bp_collision_history_dct[frame_idx]
             ball_ids, person_ids = bp_ids_history_dct[frame_idx]
@@ -43,13 +43,7 @@ class OfflineActionDetector(object):
             for bid, pid in bp_collision_relations.items():
                 pid_indx = np.where(gt_persons_id_arr == pid)[0].item()
                 bp_catch_records_dct[bid][pid_indx, frame_idx] = 1
-            # collision_rindices = np.any(bp_collistion_matx, axis=1)
-            # bp_dist_matx_collision = bp_dist_matx[collision_rindices, :]
-            # nn_cindices = np.argmin(bp_dist_matx_collision, axis=1)
-            # active_balls, active_persons = ball_ids[collision_rindices], person_ids[nn_cindices]
-            # for i, ball in enumerate(active_balls):
-            #     bp_catch_records_dct[ball][frame_idx] = active_persons[i]
-        # print(bp_catch_records_dct)
+
         catch_bp_assoc_history = {}
         for bid in self.gt_balls_id:
             time_pid_pairs = self.morph(bp_catch_records_dct[bid])
