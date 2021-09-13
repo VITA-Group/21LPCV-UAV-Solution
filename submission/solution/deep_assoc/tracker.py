@@ -1,10 +1,7 @@
-# vim: expandtab:ts=4:sw=4
 from __future__ import absolute_import
 import numpy as np
 from .linear_assignment import min_cost_matching
 from .track import Track
-from .detection import Detection
-import torch
 
 class Tracker:
     """

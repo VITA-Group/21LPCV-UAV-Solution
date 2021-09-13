@@ -17,15 +17,18 @@ from utils.general import (check_img_size, non_max_suppression, scale_coords, xy
 from utils.experimental import (save_pkl, load_pkl)
 
 from parser import get_config
-from deep_sort import DeepSort
+from deep_assoc import DeepAssoc
 
 
 import pandas as pd
 
 # from online_action_detector import OnlineActionDetector
 from offline_action_detector import OfflineActionDetector
+from activity_region_cropper import ActivityRegionCropper
+from crops_boxes_cache import CropsBoxesCache
+from image_pool import ImagePool
+from draw_tool import DrawTool
 
-from enums import ObjectCategory
 from detection import Detection
 from feature_extractor import Extractor
 import torchvision.transforms as transforms
@@ -33,206 +36,34 @@ from torchvision.transforms import InterpolationMode
 
 torch.backends.quantized.engine = 'qnnpack'
 
-class CropActivityRegion(object):
-    def __init__(self, extra):
-        self.latest_det = torch.empty(0, 4).to('cpu')
-        self.extra = extra
-
-    '''
-    Update the cropper with the latest detection results
-    '''
-    def update_memory(self, det):
-        self.latest_det = np.copy(det)
-
-    '''
-    Coordinates Transformation
-    '''
-    def coords_final2orig(self, det, img_crop_letterbox, img_crop, dx, dy):
-        det_orig = np.copy(det)
-        det_orig[:, :4] = scale_coords(img_crop_letterbox.shape[2:], torch.tensor(det_orig[:, :4]), img_crop.shape).round()
-        det_orig[:, [0, 2]] += dx
-        det_orig[:, [1, 3]] += dy
-        return det_orig
-
-    def crop_image(self, img, bbox):
-        '''
-        Crop the image based on the location of bboxs and add extra space to
-        make sure the cropped activity region could cover all persons and balls.
-        '''
-        # 1. expand the bbox
-        h, w = img.shape[:2]
-        # print('debug:', H, W)
-        xmin = w
-        ymin = h
-        xmax = ymax = 0
-        for x1, y1, x2, y2 in bbox[:, :4]:
-            xmin = int(min(xmin, x1 * (1 - self.extra)))
-            ymin = int(min(ymin, y1 * (1 - self.extra)))
-            xmax = int(min(w, max(xmax, x2 * (1 + self.extra))))
-            ymax = int(min(h, max(ymax, y2 * (1 + self.extra))))
-
-        return img[int(ymin): int(ymax), int(xmin): int(xmax), :], xmin, ymin
-
-    def letterbox_image(self, img_crop, imgsz, stride):
-        img_crop_letterbox, _, _ = letterbox(img_crop, new_shape=imgsz, stride=stride)
-        img_crop_letterbox = img_crop_letterbox[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        img_crop_letterbox = np.ascontiguousarray(img_crop_letterbox)
-
-        img_crop_letterbox = torch.from_numpy(img_crop_letterbox).to('cpu')
-        img_crop_letterbox = img_crop_letterbox.float()  # uint8 to fp16/32
-        img_crop_letterbox /= 255.0  # 0 - 255 to 0.0 - 1.0
-        img_crop_letterbox = img_crop_letterbox.unsqueeze(
-            0) if img_crop_letterbox.ndimension() == 3 else img_crop_letterbox
-        return img_crop_letterbox
-
-    def set_extra_ratio(self, extra):
-        self.extra = extra
-
-
-class CropsBoxesCache(object):
-    def __init__(self, key_frames, gt_frames, persons_count, balls_count):
-        self.key_frames = key_frames
-        self.gt_frames = gt_frames
-
-        self.gt_persons_crop_cache = np.zeros((len(gt_frames), persons_count, 128, 64, 3), dtype=np.uint8)
-        self.gt_balls_crop_cache = np.zeros((len(gt_frames), balls_count, 128, 64, 3), dtype=np.uint8)
-
-        self.gt_persons_box_cache = np.zeros((len(gt_frames), persons_count, 4), dtype=np.int32)
-        self.gt_balls_box_cache = np.zeros((len(gt_frames), balls_count, 4), dtype=np.int32)
-
-
-        self.key_persons_crop_cache = np.zeros((len(key_frames), persons_count, 128, 64, 3), dtype=np.uint8)
-        self.key_balls_crop_cache = np.zeros((len(key_frames), balls_count, 128, 64, 3), dtype=np.uint8)
-
-        self.key_persons_box_cache = np.zeros((len(key_frames), persons_count, 4), dtype=np.int32)
-        self.key_balls_box_cache = np.zeros((len(key_frames), balls_count, 4), dtype=np.int32)
-
-
-    def update(self, frame_idx, crops, boxes, is_person):
-        num_detections = crops.shape[0]
-        if frame_idx in self.key_frames:
-            pos = self.key_frames.index(frame_idx)
-            if is_person:
-                self.key_persons_crop_cache[pos][:num_detections] = crops
-                self.key_persons_box_cache[pos][:num_detections] = boxes
-            else:
-                self.key_balls_crop_cache[pos][:num_detections] = crops
-                self.key_balls_box_cache[pos][:num_detections] = boxes
-        if frame_idx in self.gt_frames:
-            pos = self.gt_frames.index(frame_idx)
-            if is_person:
-                self.gt_persons_crop_cache[pos][:num_detections] = crops
-                self.gt_persons_box_cache[pos][:num_detections] = boxes
-            else:
-                self.gt_balls_crop_cache[pos][:num_detections] = crops
-                self.gt_balls_box_cache[pos][:num_detections] = boxes
-
-    def fetch(self, frame_idx, is_person):
-        if frame_idx in self.key_frames:
-            pos = self.key_frames.index(frame_idx)
-            if is_person:
-                crops = self.key_persons_crop_cache[pos]
-                boxes = self.key_persons_box_cache[pos]
-            else:
-                crops = self.key_balls_crop_cache[pos]
-                boxes = self.key_balls_box_cache[pos]
-        if frame_idx in self.gt_frames:
-            pos = self.gt_frames.index(frame_idx)
-            if is_person:
-                crops = self.gt_persons_crop_cache[pos]
-                boxes = self.gt_persons_box_cache[pos]
-            else:
-                crops = self.gt_balls_crop_cache[pos]
-                boxes = self.gt_balls_box_cache[pos]
-        return crops, boxes
-
-
-class Draw(object):
-    @staticmethod
-    def draw_frame_idx(img, frame_idx):
-        framestr = 'Frame {frame}'
-        text = framestr.format(frame=frame_idx)
-        t_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_PLAIN, 2, 2)[0]
-        cv2.putText(img, text, (0, (t_size[1] + 10)), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
-
-    @staticmethod
-    def compute_color_for_labels(label):
-        """
-        Simple function that adds fixed color depending on the class
-        """
-        palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
-        color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
-        return tuple(color)
-
-    @staticmethod
-    def draw_tracks(img, tracks, frame_idx):
-
-        # bboxes_xyxy, ids, clses, scores = tracks[:, :4], tracks[:, 4], tracks[:, 5], tracks[:, 6]
-        bboxes_xyxy, ids, clses = tracks[:, :4], tracks[:, 4], tracks[:, 5]
-
-        img_h, img_w, _ = img.shape
-        status_scale, id_scale_ball, id_scale_person = 1080, 270, 135
-        for i, box in enumerate(bboxes_xyxy):
-            x1, y1, x2, y2 = [int(coord) for coord in box]
-            id = int(ids[i])
-            if clses[i] == ObjectCategory.BALL.value:
-                id_size = img_h // id_scale_ball
-                box_color = [0, 255, 0]  # Green
-                id_color = [0, 255, 255] # Yellow
-            else:
-                id_size = img_h // id_scale_person
-                box_color = [255, 0, 0]  # Blue
-                id_color = [0, 0, 255]   # Red
-            cv2.rectangle(img, (x1, y1), (x2, y2), color=box_color, thickness=3)
-            id_text_size = cv2.getTextSize(str(id), cv2.FONT_HERSHEY_PLAIN, fontScale=id_size, thickness=4)[0]
-            textX, textY = x1 + ((x2 - x1) - id_text_size[0]) // 2, y1 + ((y2 - y1) + id_text_size[1]) // 2
-            cv2.putText(img, text=str(id), org=(textX, textY), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=id_size, color=id_color, thickness=4)
-        Draw.draw_frame_idx(img, frame_idx)
-
-    @staticmethod
-    def draw_detections(img, dets, frame_idx):
-        bboxes_xyxy, scores, clses = dets[:, :4], dets[:, 4], dets[:, 5]
-        img_h, img_w, _ = img.shape
-        text_scale = 540
-        for i, box in enumerate(bboxes_xyxy):
-            x1, y1, x2, y2 = [int(coord) for coord in box]
-            score_text = '%d%%' % int(scores[i]*100)
-            text_size = img_h // text_scale
-            score_text_size = cv2.getTextSize(score_text, cv2.FONT_HERSHEY_PLAIN, fontScale=text_size, thickness=2)[0]
-            cv2.rectangle(img, (x1, y1), (x1 + score_text_size[0] + 1, y1 + score_text_size[1] + 1), color=[0, 0, 0], thickness=-1)
-            cv2.putText(img, text=score_text, org=(x1, y1 + score_text_size[1] + 1), fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=text_size, color=[255, 255, 255], thickness=2)
-            if clses[i] == 'sports ball':
-                box_color = [0, 255, 0]  # Green
-            else:
-                box_color = [255, 0, 0]  # Blue
-            cv2.rectangle(img, (x1, y1), (x2, y2), color=box_color, thickness=3)
-        Draw.draw_frame_idx(img, frame_idx)
 
 
 class Solution(object):
     def __init__(self, opt):
         self.opt = opt
-        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths)
-        self.frame_sample_rate = opt.skip_frames  # Sample rate used to pick the frame at a fixed temporal stride
+        cfg = get_config()
+        cfg.merge_from_file(opt.config_file)
+        self.cfg = cfg
+
+        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths,  cfg.SKIP.SKIP_GT_FRAMES)
 
         # make new output folder
         if not os.path.exists(opt.output):
             os.makedirs(opt.output)
 
         '''
-        Initialize deepsort online tracker
+        Initialize deep association online tracker
         '''
-        cfg = get_config()
-        cfg.merge_from_file(opt.config_deepsort)
-        self.extractor = Extractor(os.path.join(dir_path, cfg.DEEPSORT.REID_CKPT))
 
-        self.deepsort = DeepSort(max_dist=cfg.DEEPSORT.MAX_DIST, nn_budget=cfg.DEEPSORT.NN_BUDGET)
+        self.extractor = Extractor(os.path.join(dir_path, cfg.DEEPASSOC.REID_CKPT))
+
+        self.deep_assoc = DeepAssoc(max_dist=cfg.DEEPASSOC.MAX_DIST, nn_budget=cfg.DEEPASSOC.NN_BUDGET)
 
         '''
         Initialize person/ball detector
         '''
         self.grid = torch.load(os.path.join(dir_path, 'weights/grid.pt'), map_location='cpu')
-        self.yolo = torch.jit.load(opt.yolo_weights, map_location='cpu')
+        self.yolo = torch.jit.load(cfg.YOLO.YOLO_CKPT, map_location='cpu')
         # self.online_action_detector = OnlineActionDetector(ball_ids=self.gt_bids,
         #                                                    person_ids=self.gt_pids)
 
@@ -241,14 +72,16 @@ class Solution(object):
         '''
         model_stride = torch.tensor([8, 16, 32])
         self.stride = int(model_stride.max())  # model stride
-        self.imgsz = check_img_size(opt.img_size, s=self.stride)  # check img_size w.r.t. model stride
-        # print(self.imgsz)
+        self.imgsz = check_img_size(cfg.YOLO.IMG_SIZE, s=self.stride)  # check img_size w.r.t. model stride
         self.dataset = LoadImages(opt.source, img_size=self.imgsz, stride=self.stride)
+        fps, w, h = self.dataset.cap.get(cv2.CAP_PROP_FPS), int(self.dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
+            self.dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+        self.pool = ImagePool(pool_size=10, pool_h=1080, pool_w=1920, img_h=h, img_w=w)
         '''
         Initialize activity region cropper
         '''
-        self.crop_activity_region = CropActivityRegion(extra=0.25)
+        self.activity_region_cropper = ActivityRegionCropper(extra=0.25)
 
         self.tracks_history = []
         self.frames_idx_history = []
@@ -256,16 +89,13 @@ class Solution(object):
         self.unmatched_detections_history = {}
 
         key_frames = np.arange(self.dataset.nframes).tolist()
-        self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % self.frame_sample_rate == 0]
+        self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % cfg.SKIP.SKIP_KEY_FRAMES == 0]
         self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids))
 
-        self.img_dct = {}
-
         if opt.save_img:
+            self.img_cache = {}
             save_path = str(Path(self.opt.output) / Path(self.dataset.files[0]).name)
-            fps, w, h = self.dataset.cap.get(cv2.CAP_PROP_FPS), int(self.dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
-                self.dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.opt.fourcc), fps, (w, h))
+            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (w, h))
 
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
@@ -290,7 +120,7 @@ class Solution(object):
         )
         return bp_collistion_matx
 
-    def read_csv_gt_tracks(self, filename):
+    def read_csv_gt_tracks(self, filename, sample_rate):
         def init_pd_csv_reader(file_name):
             if not os.path.exists(file_name):
                 print("The file", file_name, "doesn't exist.")
@@ -314,7 +144,7 @@ class Solution(object):
             gt_labels[i, :labels.shape[0], :] = labels
             gt_bids += labels[labels[:,0] == 1, 1].astype(int).tolist()
             gt_pids += labels[labels[:,0] == 0, 1].astype(int).tolist()
-        return unique_frames, gt_labels, np.unique(gt_pids).tolist(), np.unique(gt_bids).tolist()
+        return [idx for idx in unique_frames if idx % sample_rate == 0], gt_labels, np.unique(gt_pids).tolist(), np.unique(gt_bids).tolist()
 
     def cxcywh2xyxy(self, bboxes_cxcywh, img):
         img_h, img_w, _ = img.shape  # get image shape
@@ -356,97 +186,101 @@ class Solution(object):
         outpath = os.path.join(self.opt.output, outpath + '_out.csv')
 
         frame_idx = 0
-
+        usable_frames = sorted(self.gt_frames + self.key_frames)
         for path, img_orig, vid_cap in self.dataset:
-            img_h, img_w, _ = img_orig.shape  # get image shape
-            if frame_idx in self.gt_frames:
-                if self.opt.save_img:
-                    self.img_dct[frame_idx] = img_orig
-                gts_raw = self.gt_labels_history[self.gt_frames.index(frame_idx)]
-                # Remove empty annotation with zeros as placeholder
-                gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
-                gts_scaled = np.multiply(gts_raw, np.array([1.0, 1.0, img_w, img_h, img_w, img_h]))
-                gts_ltrb = self.cxcywh2xyxy(gts_scaled[:, 2:], img_orig)
-                # ltrb, id, cls
-                gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
-                gts_person, gts_ball = np.copy(gts[gts[:, 5] == 0]), np.copy(gts[gts[:, 5] == 1])
-
-                self.crop_activity_region.update_memory(gts[:, :4])
-
-                gts_person_ids = gts_person[:, 4]
-                persons_order = [self.gt_pids.index(pid) for pid in gts_person_ids]
-                gts_ball_ids = gts_ball[:, 4]
-                balls_order = [self.gt_bids.index(bid) for bid in gts_ball_ids]
-
-                if gts_person.size > 0:
-                    self.update_gt_cache(gts_person, img_orig, self.gt_pids, persons_order, frame_idx, is_person=True)
-                if gts_ball.size > 0:
-                    self.update_gt_cache(gts_ball, img_orig, self.gt_bids, balls_order, frame_idx, is_person=False)
+            if frame_idx in usable_frames:
+                self.pool.write(img_orig, frame_idx)
+                if not self.pool.is_full() and frame_idx != usable_frames[-1]:
+                    frame_idx += 1
+                    continue
+                else:
+                    frame_idx += 1
             else:
+                frame_idx += 1
+                continue
 
-                # Sampling at a fixed rate
-                if frame_idx % self.frame_sample_rate != 0:
-                    frame_idx += 1
-                    continue
-                if self.opt.save_img:
-                    self.img_dct[frame_idx] = img_orig
-                '''
-                Crop the activity region from the latest prediction
-                (x_min, y_min) and (x_max, y_max) are the coords of the minimum bounding rectangle
-                '''
-                latest_det = self.crop_activity_region.latest_det
-                img_crop, dx, dy = self.crop_activity_region.crop_image(img_orig, latest_det)
-                img_crop_letterbox = self.crop_activity_region.letterbox_image(img_crop, imgsz=self.imgsz, stride=self.stride)
+            while not self.pool.is_empty():
+                idx, img_resized = self.pool.read()
+                img_h, img_w, _ = img_resized.shape  # get image shape
+                if idx in self.gt_frames:
+                    if self.opt.save_img:
+                        self.img_cache[idx] = np.copy(img_resized)
+                    gts_raw = self.gt_labels_history[self.gt_frames.index(idx)]
+                    # Remove empty annotation with zeros as placeholder
+                    gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
+                    gts_scaled = np.multiply(gts_raw, np.array([1.0, 1.0, img_w, img_h, img_w, img_h]))
+                    gts_ltrb = self.cxcywh2xyxy(gts_scaled[:, 2:], img_resized)
+                    # ltrb, id, cls
+                    gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
+                    gts_person, gts_ball = np.copy(gts[gts[:, 5] == 0]), np.copy(gts[gts[:, 5] == 1])
 
-                preds = self.yolo(img_crop_letterbox)
-                preds = postprocess(preds, self.grid, self.yolo)
+                    self.activity_region_cropper.update_memory(gts[:, :4])
 
-                # Apply NMS
-                # ltrb, conf, cls
-                dets = non_max_suppression(preds[0], self.opt.conf_thres, self.opt.iou_thres, classes=None, agnostic=False)[0]
+                    gts_person_ids = gts_person[:, 4]
+                    persons_order = [self.gt_pids.index(pid) for pid in gts_person_ids]
+                    gts_ball_ids = gts_ball[:, 4]
+                    balls_order = [self.gt_bids.index(bid) for bid in gts_ball_ids]
 
-                if dets.numel() == 0:
-                    frame_idx += 1
-                    continue
+                    if gts_person.size > 0:
+                        self.update_gt_cache(gts_person, img_resized, self.gt_pids, persons_order, idx, is_person=True)
+                    if gts_ball.size > 0:
+                        self.update_gt_cache(gts_ball, img_resized, self.gt_bids, balls_order, idx, is_person=False)
+                elif idx in self.key_frames:
+                    if self.opt.save_img:
+                        self.img_cache[idx] = np.copy(img_resized)
+                    '''
+                    Crop the activity region from the latest prediction
+                    (x_min, y_min) and (x_max, y_max) are the coords of the minimum bounding rectangle
+                    '''
+                    latest_det = self.activity_region_cropper.latest_det
+                    img_crop, dx, dy = self.activity_region_cropper.crop_image(img_resized, latest_det)
+                    img_crop_letterbox = self.activity_region_cropper.letterbox_image(img_crop, imgsz=self.imgsz, stride=self.stride)
 
-                dets = dets.detach().numpy()
+                    preds = self.yolo(img_crop_letterbox)
+                    preds = postprocess(preds, self.grid, self.yolo)
 
-                dets_person = np.copy(dets[dets[:, 5] == 0])
-                dets_ball = np.copy(dets[dets[:, 5] == 1])
-                if dets_person.shape[0] != 0 and dets_ball.shape[0] != 0:
-                    max_ball_height = (dets_person[:, 3] - dets_person[:, 1]).mean(axis=0) * 0.6
-                    dets_ball = dets_ball[(dets_ball[:, 3] - dets_ball[:, 1]) < max_ball_height]
-                    dets = np.concatenate((dets_person, dets_ball), axis=0)
+                    # Apply NMS
+                    # ltrb, conf, cls
+                    dets = non_max_suppression(preds[0], self.cfg.YOLO.CONF_THRESH, self.cfg.YOLO.IOU_THRESH, classes=None, agnostic=False)[0]
 
-                dets = self.crop_activity_region.coords_final2orig(dets, img_crop_letterbox, img_crop, dx, dy)
-                self.crop_activity_region.update_memory(dets[:, :4])
+                    if dets.numel() == 0:
+                        self.key_frames.remove(idx)
+                        continue
 
-                # if len(clses_person) < gts_persons.shape[0]:
-                self.crop_activity_region.set_extra_ratio(0.1)
-                # else:
-                #     self.crop_activity_region.set_extra_ratio(0.2)
+                    dets = dets.detach().numpy()
 
-                dets_person, dets_ball = dets[dets[:,5]==0,:], dets[dets[:,5]==1,:]
+                    dets_person = np.copy(dets[dets[:, 5] == 0])
+                    dets_ball = np.copy(dets[dets[:, 5] == 1])
+                    if dets_person.shape[0] != 0 and dets_ball.shape[0] != 0:
+                        max_ball_height = (dets_person[:, 3] - dets_person[:, 1]).mean(axis=0) * 0.6
+                        dets_ball = dets_ball[(dets_ball[:, 3] - dets_ball[:, 1]) < max_ball_height]
+                        dets = np.concatenate((dets_person, dets_ball), axis=0)
 
-                if dets_ball.size == 0 or dets_person.size == 0:
-                    self.key_frames.remove(frame_idx)
-                    frame_idx += 1
-                    continue
+                    dets = self.activity_region_cropper.coords_final2orig(dets, img_crop_letterbox, img_crop, dx, dy)
+                    self.activity_region_cropper.update_memory(dets[:, :4])
 
-                bp_collistion_matx = self.collision(dets_ball, dets_person).reshape(
-                                                                    (dets_ball.shape[0], dets_person.shape[0]))
-                if not np.any(bp_collistion_matx):
-                    self.key_frames.remove(frame_idx)
-                    # print(frame_idx)
-                    frame_idx += 1
-                    continue
+                    # if len(clses_person) < gts_persons.shape[0]:
+                    self.activity_region_cropper.set_extra_ratio(0.1)
+                    # else:
+                    #     self.activity_region_cropper.set_extra_ratio(0.2)
 
-                if dets_person.size > 0:
-                    self.update_key_cache(dets_person, img_orig, frame_idx, len(self.gt_pids), is_person=True)
-                if dets_ball.size > 0:
-                    self.update_key_cache(dets_ball, img_orig, frame_idx, len(self.gt_bids), is_person=False)
+                    dets_person, dets_ball = dets[dets[:,5]==0,:], dets[dets[:,5]==1,:]
 
-            frame_idx += 1
+                    if dets_ball.size == 0 or dets_person.size == 0:
+                        self.key_frames.remove(idx)
+                        continue
+
+                    bp_collistion_matx = self.collision(dets_ball, dets_person).reshape(
+                                                                        (dets_ball.shape[0], dets_person.shape[0]))
+                    if not np.any(bp_collistion_matx):
+                        self.key_frames.remove(idx)
+                        continue
+
+                    if dets_person.size > 0:
+                        self.update_key_cache(dets_person, img_resized, idx, len(self.gt_pids), is_person=True)
+                    if dets_ball.size > 0:
+                        self.update_key_cache(dets_ball, img_resized, idx, len(self.gt_bids), is_person=False)
+            self.pool.reset()
 
         gt_btracks_dct, gt_ptracks_dct = {}, {}
         gt_bdets_dct, gt_pdets_dct = {}, {}
@@ -482,27 +316,23 @@ class Solution(object):
                     else:
                         gt_btracks_dct[bid] = []
 
-        self.deepsort.tracker_person.initiate_tracks(gt_ptracks_dct, 0)
-        self.deepsort.tracker_ball.initiate_tracks(gt_btracks_dct, 1)
-
+        self.deep_assoc.tracker_person.initiate_tracks(gt_ptracks_dct, 0)
+        self.deep_assoc.tracker_ball.initiate_tracks(gt_btracks_dct, 1)
 
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
                 # print(frame_idx)
                 person_detections, ball_detections = gt_pdets_dct[frame_idx], gt_bdets_dct[frame_idx]
-                gt_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
+                gt_tracks = self.deep_assoc.update(person_detections, ball_detections, img_resized)
 
                 if len(gt_tracks) > 0 and self.opt.save_img:
                     # self.online_action_detector.update_catches(gt_tracks, frame_idx)
-                    img_orig = self.img_dct[frame_idx]
-                    Draw.draw_tracks(img_orig, gt_tracks, frame_idx)
-                    self.vid_writer.write(img_orig)
+                    img_resized = self.img_cache[frame_idx]
+                    DrawTool.draw_tracks(img_resized, gt_tracks, frame_idx)
+                    self.vid_writer.write(img_resized)
                 self.save_frames_tracks_history(gt_tracks, frame_idx)
 
             elif frame_idx in self.key_frames:
-                # print(frame_idx)
-                # img_orig = img_dct[frame_idx]
-
                 det_crops_person, det_boxes_person = self.cache.fetch(frame_idx, is_person=True)
                 valid_idx = ~np.all(det_boxes_person == 0, axis=1)
                 det_boxes_person = det_boxes_person[valid_idx, ...]
@@ -515,13 +345,13 @@ class Solution(object):
 
                 person_detections = self.wrapup_detections(det_boxes_person, det_crops_person, is_person=True)
                 ball_detections = self.wrapup_detections(det_boxes_ball, det_crops_ball, is_person=False)
-                pred_tracks = self.deepsort.update(person_detections, ball_detections, img_orig)
+                pred_tracks = self.deep_assoc.update(person_detections, ball_detections, img_resized)
 
                 if len(pred_tracks) > 0 and self.opt.save_img:
                     # self.online_action_detector.update_catches(pred_tracks, frame_idx)
-                    img_orig = self.img_dct[frame_idx]
-                    Draw.draw_tracks(img_orig, pred_tracks, frame_idx)
-                    self.vid_writer.write(img_orig)
+                    img_resized = self.img_cache[frame_idx]
+                    DrawTool.draw_tracks(img_resized, pred_tracks, frame_idx)
+                    self.vid_writer.write(img_resized)
                 self.save_frames_tracks_history(pred_tracks, frame_idx)
 
         # self.detect_action_online(outpath)
@@ -589,21 +419,15 @@ class Solution(object):
         self.online_action_detector.write_catches(outpath)
 
 
-
 def default_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--yolo-weights', type=str, default=os.path.join(dir_path, 'weights/yolov5s_qnnpack.torchscript'), help='model.pt path')
-    parser.add_argument('--source', type=str, default=os.path.join(dir_path, 'inference/images'), help='source')
+    parser.add_argument('--source', type=str, default=os.path.join(dir_path, 'inputs/7p3b_02M/7p3b_02M.m4v'), help='source')
     parser.add_argument('--output', type=str, default=os.path.join(dir_path, 'outputs'), help='output folder')
-    parser.add_argument('--img-size', type=int, default=416, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.4, help='object confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.5, help='IOU threshold for NMS')
+    parser.add_argument('--groundtruths', default=os.path.join(dir_path, 'inputs/7p3b_02M/7p3b_02M_init.csv'), help='path to the groundtruths.txt or \'disable\'')
+    parser.add_argument("--config_file", type=str, default=os.path.join(dir_path, "configs.yaml"))
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
-    parser.add_argument("--config_deepsort", type=str, default=os.path.join(dir_path, "configs/deep_sort.yaml"))
-    parser.add_argument('--groundtruths', default=os.path.join(dir_path, '/inputs/groundtruths.txt'), help='path to the groundtruths.txt or \'disable\'')
     parser.add_argument('--save-img', action='store_true', help='save video to outputs')
     parser.add_argument('--debugging', action='store_true', help='switch on the debugging mode')
-    parser.add_argument('--skip-frames', type=int, default=10, help='number of frames skipped after each frame scanned')
 
     return parser
 

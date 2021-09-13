@@ -1,5 +1,0 @@
-DEEPSORT:
-  REID_CKPT: "weights/resnet18_qnnpack_128.torchscript"
-  MAX_DIST: 0.25 #0.2
-  NN_BUDGET: 50 #100
-  

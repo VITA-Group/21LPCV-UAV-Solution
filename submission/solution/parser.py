@@ -27,8 +27,8 @@ class YamlParser(edict):
         self.update(config_dict)
 
 
-def get_config(config_file=None):
-    return YamlParser(config_file=config_file)
+def get_config(cfg_dict=None,config_file=None):
+    return YamlParser(cfg_dict=cfg_dict, config_file=config_file)
 
 
 if __name__ == "__main__":

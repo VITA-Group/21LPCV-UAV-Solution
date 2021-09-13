@@ -1,0 +1,14 @@
+DEEPASSOC:
+  REID_CKPT: "weights/resnet18_qnnpack_128.torchscript"
+  MAX_DIST: 0.25 #0.2
+  NN_BUDGET: 50 #100
+YOLO:
+  YOLO_CKPT: "weights/yolov5s_qnnpack.torchscript"
+  IMG_SIZE: 416
+  CONF_THRESH: 0.4 #object confidence threshold
+  IOU_THRESH: 0.5 #IOU threshold for NMS
+SKIP:
+  SKIP_KEY_FRAMES: 10
+  SKIP_GT_FRAMES: 1
+VIDEO:
+  FOURCC: "mp4v" #output video codec (verify ffmpeg support)

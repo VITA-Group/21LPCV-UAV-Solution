@@ -1,16 +1,13 @@
 import numpy as np
-import torch
 
 from .nn_matching import NearestNeighborDistanceMetric
 from .tracker import Tracker
 
-import datetime
+
+__all__ = ['DeepAssoc']
 
 
-__all__ = ['DeepSort']
-
-
-class DeepSort(object):
+class DeepAssoc(object):
     def __init__(self, max_dist=0.2, nn_budget=100):
         max_cosine_distance = max_dist
         metric_person = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)

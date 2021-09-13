@@ -1,8 +1,3 @@
-# vim: expandtab:ts=4:sw=4
-
-import datetime
-
-
 class Track:
     """
     A single target track with state space `(x, y, a, h)` and associated
