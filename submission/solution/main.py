@@ -15,22 +15,22 @@ sys.path.insert(0, dir_path)
 from utils.datasets import LoadImages, letterbox
 from utils.general import (check_img_size, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, postprocess)
 from utils.experimental import (save_pkl, load_pkl)
+from utils.draw_tool import DrawTool
+from utils.detection import Detection
 
 from parser import get_config
 from deep_assoc import DeepAssoc
+from deep_assoc.feature_extractor import Extractor
 
 
 import pandas as pd
 
-# from online_action_detector import OnlineActionDetector
-from offline_action_detector import OfflineActionDetector
-from activity_region_cropper import ActivityRegionCropper
-from crops_boxes_cache import CropsBoxesCache
-from image_pool import ImagePool
-from draw_tool import DrawTool
+# from modules.online_action_detector import OnlineActionDetector
+from modules.offline_action_detector import OfflineActionDetector
+from modules.activity_region_cropper import ActivityRegionCropper
+from modules.crops_boxes_cache import CropsBoxesCache
+from modules.image_pool import ImagePool
 
-from detection import Detection
-from feature_extractor import Extractor
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
 
@@ -77,7 +77,7 @@ class Solution(object):
         fps, w, h = self.dataset.cap.get(cv2.CAP_PROP_FPS), int(self.dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
             self.dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        self.pool = ImagePool(pool_size=10, pool_h=1080, pool_w=1920, img_h=h, img_w=w)
+        self.pool = ImagePool(pool_size=40, pool_h=540, pool_w=960, img_h=h, img_w=w)
         '''
         Initialize activity region cropper
         '''
@@ -90,12 +90,13 @@ class Solution(object):
 
         key_frames = np.arange(self.dataset.nframes).tolist()
         self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % cfg.SKIP.SKIP_KEY_FRAMES == 0]
-        self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids))
+        self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH)
 
         if opt.save_img:
             self.img_cache = {}
             save_path = str(Path(self.opt.output) / Path(self.dataset.files[0]).name)
-            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (w, h))
+            # self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (w, h))
+            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (960, 540))
 
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
@@ -160,7 +161,7 @@ class Solution(object):
 
     def update_gt_cache(self, gts, img, gt_ids, order, frame_idx, is_person):
         crops = self.get_crops(gts, img)
-        ordered_crops = np.zeros((len(gt_ids), 128, 64, 3), dtype=np.uint8)
+        ordered_crops = np.zeros((len(gt_ids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH, 3), dtype=np.uint8)
         ordered_boxes = np.zeros((len(gt_ids), 4), dtype=np.int32)
         for i, idx in enumerate(order):
             ordered_crops[idx] = crops[i]
@@ -385,7 +386,7 @@ class Solution(object):
     def get_crops(self, dets, ori_img):
         transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize((128, 64), interpolation=InterpolationMode.BICUBIC)
+            transforms.Resize((self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH), interpolation=InterpolationMode.BICUBIC)
         ])
 
         bboxes_ltrb, confs, clses = dets[:, :4], dets[:, 4], dets[:, 5]

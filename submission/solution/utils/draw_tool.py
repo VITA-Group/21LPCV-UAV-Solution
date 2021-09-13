@@ -1,5 +1,5 @@
 import cv2
-from enums import ObjectCategory
+from .enums import ObjectCategory
 
 
 class DrawTool(object):

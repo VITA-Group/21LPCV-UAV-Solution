@@ -1,19 +1,19 @@
 import numpy as np
 
 class CropsBoxesCache(object):
-    def __init__(self, key_frames, gt_frames, persons_count, balls_count):
+    def __init__(self, key_frames, gt_frames, persons_count, balls_count, crop_height, crop_width):
         self.key_frames = key_frames
         self.gt_frames = gt_frames
 
-        self.gt_persons_crop_cache = np.zeros((len(gt_frames), persons_count, 128, 64, 3), dtype=np.uint8)
-        self.gt_balls_crop_cache = np.zeros((len(gt_frames), balls_count, 128, 64, 3), dtype=np.uint8)
+        self.gt_persons_crop_cache = np.zeros((len(gt_frames), persons_count, crop_height, crop_width, 3), dtype=np.uint8)
+        self.gt_balls_crop_cache = np.zeros((len(gt_frames), balls_count, crop_height, crop_width, 3), dtype=np.uint8)
 
         self.gt_persons_box_cache = np.zeros((len(gt_frames), persons_count, 4), dtype=np.int32)
         self.gt_balls_box_cache = np.zeros((len(gt_frames), balls_count, 4), dtype=np.int32)
 
 
-        self.key_persons_crop_cache = np.zeros((len(key_frames), persons_count, 128, 64, 3), dtype=np.uint8)
-        self.key_balls_crop_cache = np.zeros((len(key_frames), balls_count, 128, 64, 3), dtype=np.uint8)
+        self.key_persons_crop_cache = np.zeros((len(key_frames), persons_count, crop_height, crop_width, 3), dtype=np.uint8)
+        self.key_balls_crop_cache = np.zeros((len(key_frames), balls_count, crop_height, crop_width, 3), dtype=np.uint8)
 
         self.key_persons_box_cache = np.zeros((len(key_frames), persons_count, 4), dtype=np.int32)
         self.key_balls_box_cache = np.zeros((len(key_frames), balls_count, 4), dtype=np.int32)

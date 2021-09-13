@@ -3,7 +3,7 @@ import statistics
 
 from collections import OrderedDict
 
-from enums import ObjectCategory
+from utils.enums import ObjectCategory
 from ball_reid import Box
 
 class OnlineActionDetector(object):

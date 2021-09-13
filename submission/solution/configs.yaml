@@ -1,6 +1,8 @@
 DEEPASSOC:
   REID_CKPT: "weights/resnet18_qnnpack_128.torchscript"
   MAX_DIST: 0.25 #0.2
+  CROP_HEIGHT: 64
+  CROP_WIDTH: 32
   NN_BUDGET: 50 #100
 YOLO:
   YOLO_CKPT: "weights/yolov5s_qnnpack.torchscript"
