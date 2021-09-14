@@ -1,8 +1,8 @@
 DEEPASSOC:
   REID_CKPT: "weights/resnet18_qnnpack_128.torchscript"
   MAX_DIST: 0.25 #0.2
-  CROP_HEIGHT: 64
-  CROP_WIDTH: 32
+  CROP_HEIGHT: 128
+  CROP_WIDTH: 64
   NN_BUDGET: 50 #100
 YOLO:
   YOLO_CKPT: "weights/yolov5s_qnnpack.torchscript"
@@ -13,4 +13,7 @@ SKIP:
   SKIP_KEY_FRAMES: 10
   SKIP_GT_FRAMES: 1
 VIDEO:
+  POOL_H: 1080
+  POOL_W: 1920
+  POOL_SIZE: 40
   FOURCC: "mp4v" #output video codec (verify ffmpeg support)

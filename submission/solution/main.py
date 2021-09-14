@@ -25,7 +25,7 @@ from deep_assoc.feature_extractor import Extractor
 
 import pandas as pd
 
-# from modules.online_action_detector import OnlineActionDetector
+from modules.online_action_detector import OnlineActionDetector
 from modules.offline_action_detector import OfflineActionDetector
 from modules.activity_region_cropper import ActivityRegionCropper
 from modules.crops_boxes_cache import CropsBoxesCache
@@ -45,7 +45,7 @@ class Solution(object):
         cfg.merge_from_file(opt.config_file)
         self.cfg = cfg
 
-        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths,  cfg.SKIP.SKIP_GT_FRAMES)
+        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths, self.cfg.SKIP.SKIP_GT_FRAMES)
 
         # make new output folder
         if not os.path.exists(opt.output):
@@ -55,48 +55,44 @@ class Solution(object):
         Initialize deep association online tracker
         '''
 
-        self.extractor = Extractor(os.path.join(dir_path, cfg.DEEPASSOC.REID_CKPT))
+        self.extractor = Extractor(os.path.join(dir_path, self.cfg.DEEPASSOC.REID_CKPT))
 
-        self.deep_assoc = DeepAssoc(max_dist=cfg.DEEPASSOC.MAX_DIST, nn_budget=cfg.DEEPASSOC.NN_BUDGET)
+        self.deep_assoc = DeepAssoc(max_dist=self.cfg.DEEPASSOC.MAX_DIST, nn_budget=self.cfg.DEEPASSOC.NN_BUDGET)
 
         '''
         Initialize person/ball detector
         '''
         self.grid = torch.load(os.path.join(dir_path, 'weights/grid.pt'), map_location='cpu')
-        self.yolo = torch.jit.load(cfg.YOLO.YOLO_CKPT, map_location='cpu')
-        # self.online_action_detector = OnlineActionDetector(ball_ids=self.gt_bids,
-        #                                                    person_ids=self.gt_pids)
+        self.yolo = torch.jit.load(self.cfg.YOLO.YOLO_CKPT, map_location='cpu')
 
         '''
         Initialize Dataloader
         '''
         model_stride = torch.tensor([8, 16, 32])
         self.stride = int(model_stride.max())  # model stride
-        self.imgsz = check_img_size(cfg.YOLO.IMG_SIZE, s=self.stride)  # check img_size w.r.t. model stride
+        self.imgsz = check_img_size(self.cfg.YOLO.IMG_SIZE, s=self.stride)  # check img_size w.r.t. model stride
         self.dataset = LoadImages(opt.source, img_size=self.imgsz, stride=self.stride)
         fps, w, h = self.dataset.cap.get(cv2.CAP_PROP_FPS), int(self.dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
             self.dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-        self.pool = ImagePool(pool_size=40, pool_h=540, pool_w=960, img_h=h, img_w=w)
+        self.pool = ImagePool(pool_size=self.cfg.VIDEO.POOL_SIZE, pool_h=self.cfg.VIDEO.POOL_H, pool_w=self.cfg.VIDEO.POOL_W, img_h=h, img_w=w)
         '''
         Initialize activity region cropper
         '''
         self.activity_region_cropper = ActivityRegionCropper(extra=0.25)
 
-        self.tracks_history = []
-        self.frames_idx_history = []
-        self.unmatched_tracks_history = {}
-        self.unmatched_detections_history = {}
+        self.tracks_history, self.frames_idx_history = [], []
+        self.unmatched_tracks_history, self.unmatched_detections_history = {}, {}
 
         key_frames = np.arange(self.dataset.nframes).tolist()
-        self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % cfg.SKIP.SKIP_KEY_FRAMES == 0]
+        self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % self.cfg.SKIP.SKIP_KEY_FRAMES == 0]
         self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH)
 
         if opt.save_img:
             self.img_cache = {}
             save_path = str(Path(self.opt.output) / Path(self.dataset.files[0]).name)
             # self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (w, h))
-            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (960, 540))
+            self.vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*self.cfg.VIDEO.FOURCC), fps, (self.cfg.VIDEO.POOL_W, self.cfg.VIDEO.POOL_H))
 
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
@@ -322,16 +318,15 @@ class Solution(object):
 
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
-                # print(frame_idx)
                 person_detections, ball_detections = gt_pdets_dct[frame_idx], gt_bdets_dct[frame_idx]
                 gt_tracks = self.deep_assoc.update(person_detections, ball_detections, img_resized)
 
-                if len(gt_tracks) > 0 and self.opt.save_img:
-                    # self.online_action_detector.update_catches(gt_tracks, frame_idx)
-                    img_resized = self.img_cache[frame_idx]
-                    DrawTool.draw_tracks(img_resized, gt_tracks, frame_idx)
-                    self.vid_writer.write(img_resized)
-                self.save_frames_tracks_history(gt_tracks, frame_idx)
+                if len(gt_tracks) > 0:
+                    self.save_frames_tracks_history(gt_tracks, frame_idx)
+                    if self.opt.save_img:
+                        img_resized = self.img_cache[frame_idx]
+                        DrawTool.draw_tracks(img_resized, gt_tracks, frame_idx)
+                        self.vid_writer.write(img_resized)
 
             elif frame_idx in self.key_frames:
                 det_crops_person, det_boxes_person = self.cache.fetch(frame_idx, is_person=True)
@@ -348,16 +343,16 @@ class Solution(object):
                 ball_detections = self.wrapup_detections(det_boxes_ball, det_crops_ball, is_person=False)
                 pred_tracks = self.deep_assoc.update(person_detections, ball_detections, img_resized)
 
-                if len(pred_tracks) > 0 and self.opt.save_img:
-                    # self.online_action_detector.update_catches(pred_tracks, frame_idx)
-                    img_resized = self.img_cache[frame_idx]
-                    DrawTool.draw_tracks(img_resized, pred_tracks, frame_idx)
-                    self.vid_writer.write(img_resized)
-                self.save_frames_tracks_history(pred_tracks, frame_idx)
+                if len(pred_tracks) > 0:
+                    self.save_frames_tracks_history(pred_tracks, frame_idx)
+                    if self.opt.save_img:
+                        img_resized = self.img_cache[frame_idx]
+                        DrawTool.draw_tracks(img_resized, pred_tracks, frame_idx)
+                        self.vid_writer.write(img_resized)
 
         # self.detect_action_online(outpath)
         self.detect_action_offline(outpath)
-        # self.save_offline_detection(self.tracks_history, self.unmatched_tracks_history, self.unmatched_detections_history, self.frames_idx_history)
+        self.save_tracks(self.tracks_history, self.frames_idx_history, self.gt_bids, self.gt_pids)
 
     def wrapup_detections(self, boxes, crops, is_person):
         def get_features(crops):
@@ -397,27 +392,24 @@ class Solution(object):
             im_crops.append(np.array(transform(im)))
         return im_crops
 
-    def save_online_detection(self):
-        save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'online_action_detection')
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
-        save_pkl(self.online_action_detector.history_collision_summary, os.path.join(save_path, 'history_collision_summary.pkl'))
-        save_pkl(self.online_action_detector.latest_bp_assoc_dct, os.path.join(save_path, 'latest_bp_assoc_dct.pkl'))
-
-    def save_offline_detection(self, tracks_history, unmatched_tracks_history, unmatched_detections_history, frames_idx_history):
-        save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'offline_action_detection')
+    def save_tracks(self, tracks_history, frames_idx_history, ball_ids, person_ids):
+        save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'tracking')
         if not os.path.exists(save_path):
             os.makedirs(save_path)
         save_pkl(tracks_history, os.path.join(save_path, 'tracks_history.pkl'))
         save_pkl(frames_idx_history, os.path.join(save_path, 'frames_idx_history.pkl'))
+        save_pkl(ball_ids, os.path.join(save_path, 'ball_ids.pkl'))
+        save_pkl(person_ids, os.path.join(save_path, 'person_ids.pkl'))
 
     def detect_action_offline(self, outpath):
-        self.offline_action_detector = OfflineActionDetector(self.tracks_history, self.frames_idx_history,
-                                                             ball_ids=self.gt_bids, person_ids=self.gt_pids)
-        self.offline_action_detector.write_catches(outpath)
+        offline_action_detector = OfflineActionDetector(self.tracks_history, self.frames_idx_history,
+                                                        ball_ids=self.gt_bids, person_ids=self.gt_pids)
+        offline_action_detector.write_catches(outpath)
 
     def detect_action_online(self, outpath):
-        self.online_action_detector.write_catches(outpath)
+        online_action_detector = OnlineActionDetector(self.tracks_history, self.frames_idx_history,
+                                                      ball_ids=self.gt_bids, person_ids=self.gt_pids)
+        online_action_detector.write_catches(outpath)
 
 
 def default_parser():

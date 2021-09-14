@@ -1,37 +1,81 @@
 import csv
 import statistics
-
-from collections import OrderedDict
-
 from utils.enums import ObjectCategory
-from ball_reid import Box
+import numpy as np
+from scipy.optimize import linear_sum_assignment
+from collections import OrderedDict
+import os
+import pickle
 
 class OnlineActionDetector(object):
-    def __init__(self, ball_ids, person_ids):
-        self.ball_ids = ball_ids
-        self.person_ids = person_ids
+    def __init__(self, tracks_history, frame_idx_history, ball_ids, person_ids):
+        self.gt_ball_ids = ball_ids
+        self.gt_person_ids = person_ids
+        self.tracks_history = [track.astype(int) for track in tracks_history]
+        self.frame_idx_history = frame_idx_history
         self.history_collision_summary = []
-        self.latest_bp_assoc_dct = OrderedDict()
-        for bid in ball_ids:
+        self.latest_bp_assoc_dct = {}
+        self.EPSILON, self.MAX_DISTANCE = 1e-10, 1.0
+
+        for bid in self.gt_ball_ids:
             self.latest_bp_assoc_dct[bid] = 0
 
+    def get_frame_tracks_dct(self):
+        frame_tracks_dct = OrderedDict()
+        for i, frame_idx in enumerate(self.frame_idx_history):
+            tracks = self.tracks_history[i]
+            tracks[:, :2] = tracks[:, :2] + tracks[:, 2:4] / 2
+            person_tracks = tracks[tracks[:, 5] == 0, :]
+            ball_tracks = tracks[tracks[:, 5] == 1, :]
+            if person_tracks.size > 0 and ball_tracks.size > 0:
+                frame_tracks_dct[frame_idx] = (ball_tracks, person_tracks)
+        return frame_tracks_dct
+
     def update_catches(self, tracks, frame_idx):
+        def get_bp_collision_dist(ball_tracks, person_tracks):
+            balls_center, persons_center = ball_tracks[:, :2], person_tracks[:, :2]
+            persons_lt = person_tracks[:, :2] - 0.5 * person_tracks[:, 2:4]
+            persons_rb = person_tracks[:, :2] + 0.5 * person_tracks[:, 2:4]
+            bp_collistion_matx = np.logical_and(
+                np.logical_and(*np.dsplit(
+                    np.subtract(balls_center[:, np.newaxis, :], persons_lt[np.newaxis, :, :]) >= 0, 2)),
+                np.logical_and(*np.dsplit(
+                    np.subtract(persons_rb[np.newaxis, :, :], balls_center[:, np.newaxis, :]) >= 0, 2))
+            )
+            bp_dist_matx = np.linalg.norm(
+                np.subtract(balls_center[:, np.newaxis, :], persons_center), axis=2)
+            person_diag_matx = np.tile(np.linalg.norm(np.subtract(persons_lt, persons_rb), axis=-1),
+                                       (ball_tracks.shape[0], 1))
+            bp_norm_dist_matx = np.true_divide(bp_dist_matx, person_diag_matx)
+            return bp_collistion_matx.reshape((ball_tracks.shape[0], person_tracks.shape[0])), \
+                   bp_norm_dist_matx.reshape((ball_tracks.shape[0], person_tracks.shape[0]))
 
-        bboxes_ltwh, ids, clses = tracks[:, :4], tracks[:, 4], tracks[:, 5]
+        ball_tracks, person_tracks = tracks
 
-        # Create a list of bbox centers and ranges
-        bboxes_cxcyRange = Box.xyxy2cxcyRange_batch(bboxes_ltwh)
+        bp_collistion_matx, bp_norm_dist_matx = get_bp_collision_dist(ball_tracks, person_tracks)
+        cost_matrix = np.multiply(bp_norm_dist_matx+self.EPSILON, bp_collistion_matx)
+        cost_matrix[cost_matrix <= self.EPSILON] = self.MAX_DISTANCE
 
-        persons_bbox_cxcyRange = [[ids[i]] + bbox for i, bbox in enumerate(bboxes_cxcyRange) if clses[i] == ObjectCategory.PERSON.value and ids[i] in self.person_ids]
-        balls_bbox_cxcyRange = [[ids[i]] + bbox for i, bbox in enumerate(bboxes_cxcyRange) if clses[i] == ObjectCategory.BALL.value and ids[i] in self.ball_ids]
+        row_indices, col_indices = linear_sum_assignment(cost_matrix)
+        collisions = []
+        for row, col in zip(row_indices, col_indices):
+            ball_id, person_id = ball_tracks[row, 4], person_tracks[col, 4]
+            if cost_matrix[row, col] < self.MAX_DISTANCE:
+                collisions.append((person_id, ball_id))
 
-        # Detect collison between balls and people
-        collisions = self.detect_bp_collisions(persons_bbox_cxcyRange, balls_bbox_cxcyRange)
+        # collision_pos = np.where(bp_collistion_matx == 1)
+        # collision_balls_indx, collision_persons_indx = collision_pos[0], collision_pos[1]
+        # collision_balls_id, collision_persons_id = ball_tracks[collision_balls_indx, 4], person_tracks[collision_persons_indx, 4]
+        # _, indices = np.unique(collision_balls_id, return_index=True)
+        # pb_collision_relations = dict(zip(collision_persons_id[indices], collision_balls_id[indices]))
 
-        self.update_bp_assoc_dct(frame_idx, collisions)
-
+        pb_collision_relations = dict(collisions)
+        self.update_bp_assoc_dct(frame_idx, pb_collision_relations)
 
     def write_catches(self, output_path):
+        frame_tracks_dct = self.get_frame_tracks_dct()
+        for frame_idx, tracks in frame_tracks_dct.items():
+            self.update_catches(tracks, frame_idx)
         with open(output_path, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=',', quotechar=' ', quoting=csv.QUOTE_MINIMAL)
             ordered_balls = sorted(self.latest_bp_assoc_dct.keys())
@@ -44,26 +88,6 @@ class OnlineActionDetector(object):
                 frame_assoc.insert(0, frame_idx)
                 writer.writerow(frame_assoc)
         return
-
-    def detect_bp_collisions(self, persons_bbox_cxcyRange, balls_bbox_cxcyRange):
-
-        def collision_criterion(person_xrng, person_yrng, ball_cx, ball_cy):
-            if ball_cx >= person_xrng[0] and ball_cx <= person_xrng[1] \
-                    and ball_cy >= person_yrng[0] and ball_cy <= person_yrng[1]:
-                return True
-            else:
-                return False
-
-        collisions = {} # key: id, value: color
-
-        for pbox in persons_bbox_cxcyRange:
-            person_id, person_xrng, person_yrng = pbox[0], pbox[3], pbox[4]
-            for bbox in balls_bbox_cxcyRange:
-                ball_id, ball_cx, ball_cy = bbox[0], bbox[1], bbox[2]
-                if collision_criterion(person_xrng, person_yrng, ball_cx, ball_cy) and ball_id not in collisions.values():
-                    collisions[person_id] = ball_id
-                    break
-        return collisions
 
     def update_bp_assoc_dct(self, frame_idx, collisions):
         updateCatchAction = False
@@ -97,7 +121,6 @@ class OnlineActionDetector(object):
             current_frame_idx, current_frame_assoc = current_frame_summary[0], current_frame_summary[1]
 
             balls_assoc_history = [[] for _ in range(num_balls)]
-            print(i)
             for k, id in enumerate(current_frame_assoc):
                 balls_assoc_history[k].append(id)
             j = i + 1
@@ -120,3 +143,26 @@ class OnlineActionDetector(object):
 
         self.history_collision_summary = frame_catch_frame_assoc
         return
+
+def save_pkl(data, filename):
+    with open(filename, 'wb') as f:
+        pickle.dump(data, f)
+
+def load_pkl(filename):
+    with open(filename, 'rb') as f:
+        data = pickle.load(f)
+    return data
+
+if __name__ == '__main__':
+    vid_name = '7p3b_02M'
+    dst = 'outputs'
+    outpath = os.path.join(dst, vid_name, vid_name + '_out.csv')
+    saved_tracks_path = os.path.join(dst, vid_name, 'tracking')
+
+    tracks_history = load_pkl(os.path.join(saved_tracks_path, 'tracks_history.pkl'))
+    frames_idx_history = load_pkl(os.path.join(saved_tracks_path, 'frames_idx_history.pkl'))
+    gt_pids = load_pkl(os.path.join(saved_tracks_path, 'person_ids.pkl'))
+    gt_bids = load_pkl(os.path.join(saved_tracks_path, 'ball_ids.pkl'))
+
+    action_detector = OnlineActionDetector(tracks_history, frames_idx_history, gt_bids, gt_pids)
+    action_detector.write_catches(outpath)

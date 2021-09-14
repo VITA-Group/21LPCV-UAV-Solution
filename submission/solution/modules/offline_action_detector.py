@@ -8,7 +8,7 @@ import math
 from itertools import groupby
 from collections import defaultdict
 import os
-from utils.experimental import (save_pkl, load_pkl)
+import pickle
 
 class OfflineActionDetector(object):
     def __init__(self, tracks_history, frame_idx_history, ball_ids, person_ids):
@@ -163,6 +163,15 @@ class OfflineActionDetector(object):
             merged_time_pid_pair.append(time_pid_pairs[gr[0]])
         return merged_time_pid_pair
 
+def save_pkl(data, filename):
+    with open(filename, 'wb') as f:
+        pickle.dump(data, f)
+
+def load_pkl(filename):
+    with open(filename, 'rb') as f:
+        data = pickle.load(f)
+    return data
+
 if __name__ == '__main__':
     vid_name = '7p3b_02M'
     dst = 'outputs'
@@ -171,7 +180,8 @@ if __name__ == '__main__':
 
     tracks_history = load_pkl(os.path.join(saved_tracks_path, 'tracks_history.pkl'))
     frames_idx_history = load_pkl(os.path.join(saved_tracks_path, 'frames_idx_history.pkl'))
-    gt_tracks = load_pkl(os.path.join(saved_tracks_path, 'gt_tracks.pkl'))
+    gt_pids = load_pkl(os.path.join(saved_tracks_path, 'person_ids.pkl'))
+    gt_bids = load_pkl(os.path.join(saved_tracks_path, 'ball_ids.pkl'))
 
-    action_detector = OfflineActionDetector(tracks_history, gt_tracks, frames_idx_history)
+    action_detector = OfflineActionDetector(tracks_history, frames_idx_history, gt_bids, gt_pids)
     action_detector.write_catches(outpath)
