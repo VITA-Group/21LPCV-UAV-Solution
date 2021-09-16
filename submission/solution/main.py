@@ -25,8 +25,8 @@ from deep_assoc.feature_extractor import Extractor
 
 import pandas as pd
 
-from modules.online_action_detector import OnlineActionDetector
-from modules.offline_action_detector import OfflineActionDetector
+from modules.baseline_action_detector import BaselineActionDetector
+from modules.improved_action_detector import ImprovedActionDetector
 from modules.activity_region_cropper import ActivityRegionCropper
 from modules.crops_boxes_cache import CropsBoxesCache
 from modules.image_pool import ImagePool
@@ -179,8 +179,7 @@ class Solution(object):
         self.cache.update(frame_idx, sorted_crops, sorted_boxes, is_person=is_person)
 
     def run(self):
-        outpath = os.path.basename(self.opt.source)[:-4]
-        outpath = os.path.join(self.opt.output, outpath + '_out.csv')
+
 
         frame_idx = 0
         usable_frames = sorted(self.gt_frames + self.key_frames)
@@ -350,8 +349,8 @@ class Solution(object):
                         DrawTool.draw_tracks(img_resized, pred_tracks, frame_idx)
                         self.vid_writer.write(img_resized)
 
-        # self.detect_action_online(outpath)
-        self.detect_action_offline(outpath)
+        self.detect_action_baseline()
+        self.detect_action_improved()
         self.save_tracks(self.tracks_history, self.frames_idx_history, self.gt_bids, self.gt_pids)
 
     def wrapup_detections(self, boxes, crops, is_person):
@@ -401,15 +400,19 @@ class Solution(object):
         save_pkl(ball_ids, os.path.join(save_path, 'ball_ids.pkl'))
         save_pkl(person_ids, os.path.join(save_path, 'person_ids.pkl'))
 
-    def detect_action_offline(self, outpath):
-        offline_action_detector = OfflineActionDetector(self.tracks_history, self.frames_idx_history,
-                                                        ball_ids=self.gt_bids, person_ids=self.gt_pids)
-        offline_action_detector.write_catches(outpath)
+    def detect_action_improved(self):
+        outpath = os.path.basename(self.opt.source)[:-4]
+        outpath = os.path.join(self.opt.output, outpath + '_improved_out.csv')
+        action_detector = ImprovedActionDetector(self.tracks_history, self.frames_idx_history,
+                                                 ball_ids=self.gt_bids, person_ids=self.gt_pids)
+        action_detector.write_catches(outpath)
 
-    def detect_action_online(self, outpath):
-        online_action_detector = OnlineActionDetector(self.tracks_history, self.frames_idx_history,
-                                                      ball_ids=self.gt_bids, person_ids=self.gt_pids)
-        online_action_detector.write_catches(outpath)
+    def detect_action_baseline(self):
+        outpath = os.path.basename(self.opt.source)[:-4]
+        outpath = os.path.join(self.opt.output, outpath + '_baseline_out.csv')
+        action_detector = BaselineActionDetector(self.tracks_history, self.frames_idx_history,
+                                                 ball_ids=self.gt_bids, person_ids=self.gt_pids)
+        action_detector.write_catches(outpath)
 
 
 def default_parser():

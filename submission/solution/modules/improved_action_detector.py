@@ -9,8 +9,9 @@ from itertools import groupby
 from collections import defaultdict
 import os
 import pickle
+from scipy.optimize import linear_sum_assignment
 
-class OfflineActionDetector(object):
+class ImprovedActionDetector(object):
     def __init__(self, tracks_history, frame_idx_history, ball_ids, person_ids):
         self.gt_balls_id = ball_ids
         self.gt_persons_id = person_ids
@@ -21,6 +22,7 @@ class OfflineActionDetector(object):
 
         self.morph_radius = 5
         self.key_frames = []
+        self.EPSILON, self.MAX_DISTANCE = 1e-10, 1.0
 
     def get_frame_tracks_dct(self):
         frame_tracks_dct = OrderedDict()
@@ -36,11 +38,14 @@ class OfflineActionDetector(object):
     def get_dist_collision_history(self, frame_tracks_dct):
         def collision(ball_tracks, person_tracks):
             balls_center, persons_center = ball_tracks[:, :2], person_tracks[:, :2]
+            persons_lt = person_tracks[:, :2] - 0.5 * person_tracks[:, 2:4]
+            persons_rb = person_tracks[:, :2] + 0.5 * person_tracks[:, 2:4]
             ball_ids, person_ids = ball_tracks[:, 4], person_tracks[:, 4]
             bp_dist_matx = np.linalg.norm(
                                     np.subtract(balls_center[:, np.newaxis, :], persons_center), axis=2).reshape((len(ball_ids), len(person_ids)))
-            persons_lt = person_tracks[:, :2] - 0.5 * person_tracks[:, 2:4]
-            persons_rb = person_tracks[:, :2] + 0.5 * person_tracks[:, 2:4]
+            person_diag_matx = np.tile(np.linalg.norm(np.subtract(persons_lt, persons_rb), axis=-1),
+                                       (ball_tracks.shape[0], 1))
+            bp_norm_dist_matx = np.true_divide(bp_dist_matx, person_diag_matx).reshape((len(ball_ids), len(person_ids)))
             bp_collistion_matx = np.logical_and(
                                     np.logical_and(*np.dsplit(
                                         np.subtract(balls_center[:, np.newaxis, :], persons_lt[np.newaxis, :, :]) > 0, 2)),
@@ -48,24 +53,24 @@ class OfflineActionDetector(object):
                                         np.subtract(persons_rb[np.newaxis, :, :], balls_center[:, np.newaxis, :]) > 0, 2))
                                     ).reshape((len(ball_ids), len(person_ids)))
             if np.any(bp_collistion_matx):
-                return True, bp_dist_matx, bp_collistion_matx, ball_ids, person_ids
+                return True, bp_norm_dist_matx, bp_collistion_matx, ball_ids, person_ids
             return False, None, None, None, None
 
         key_frames = []
-        bp_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = {}, {}, {}
+        bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = {}, {}, {}
         for frame_idx, tracks in frame_tracks_dct.items():
             ball_tracks, person_tracks = tracks
-            has_collision, bp_dist_matx, bp_collistion_matx, ball_ids, person_ids = collision(ball_tracks, person_tracks)
+            has_collision, bp_norm_dist_matx, bp_collistion_matx, ball_ids, person_ids = collision(ball_tracks, person_tracks)
             if has_collision:
                 key_frames.append(frame_idx)
-                bp_dist_history_dct[frame_idx] = bp_dist_matx
+                bp_norm_dist_history_dct[frame_idx] = bp_norm_dist_matx
                 bp_collision_history_dct[frame_idx] = bp_collistion_matx
                 bp_ids_history_dct[frame_idx] = (ball_ids, person_ids)
-        return key_frames, bp_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct
+        return key_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct
 
     def write_catches(self, outpath):
         frame_tracks_dct = self.get_frame_tracks_dct()
-        key_frames, bp_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = self.get_dist_collision_history(frame_tracks_dct)
+        key_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = self.get_dist_collision_history(frame_tracks_dct)
 
         bp_catch_records_dct = {}
         for id in self.gt_balls_id:
@@ -74,13 +79,23 @@ class OfflineActionDetector(object):
         gt_persons_id_arr = np.array(self.gt_persons_id)
         for frame_idx in key_frames:
             # print(frame_idx)
-            # bp_dist_matx  = bp_dist_history_dct[frame_idx]
+            bp_norm_dist_matx  = bp_norm_dist_history_dct[frame_idx]
             bp_collistion_matx = bp_collision_history_dct[frame_idx]
             ball_ids, person_ids = bp_ids_history_dct[frame_idx]
-            collision_pos = np.where(bp_collistion_matx==1)
-            collision_balls_indx, collision_persons_indx = collision_pos[0], collision_pos[1]
-            collision_balls_id, collision_persons_id = ball_ids[collision_balls_indx], person_ids[collision_persons_indx]
-            bp_collision_relations = dict(zip(collision_balls_id, collision_persons_id))
+            cost_matrix = np.multiply(bp_norm_dist_matx + self.EPSILON, bp_collistion_matx)
+            cost_matrix[cost_matrix <= self.EPSILON] = self.MAX_DISTANCE
+            row_indices, col_indices = linear_sum_assignment(cost_matrix)
+            collisions = []
+            for row, col in zip(row_indices, col_indices):
+                ball_id, person_id = ball_ids[row], person_ids[col]
+                if cost_matrix[row, col] < self.MAX_DISTANCE:
+                    collisions.append((ball_id, person_id))
+            # collision_pos = np.where(bp_collistion_matx==1)
+            # collision_balls_indx, collision_persons_indx = collision_pos[0], collision_pos[1]
+            # collision_balls_id, collision_persons_id = ball_ids[collision_balls_indx], person_ids[collision_persons_indx]
+            # bp_collision_relations = dict(zip(collision_balls_id, collision_persons_id))
+
+            bp_collision_relations = dict(collisions)
             for bid, pid in bp_collision_relations.items():
                 pid_indx = np.where(gt_persons_id_arr == pid)[0].item()
                 bp_catch_records_dct[bid][pid_indx, frame_idx] = 1

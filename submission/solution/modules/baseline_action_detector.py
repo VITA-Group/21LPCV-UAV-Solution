@@ -7,7 +7,7 @@ from collections import OrderedDict
 import os
 import pickle
 
-class OnlineActionDetector(object):
+class BaselineActionDetector(object):
     def __init__(self, tracks_history, frame_idx_history, ball_ids, person_ids):
         self.gt_ball_ids = ball_ids
         self.gt_person_ids = person_ids
@@ -81,7 +81,7 @@ class OnlineActionDetector(object):
             ordered_balls = sorted(self.latest_bp_assoc_dct.keys())
             ordered_balls.insert(0, "frame")
             writer.writerow(ordered_balls)
-            self.catch_action_correction()
+            self.correct_catches()
             for i in range(len(self.history_collision_summary)):
                 frame_idx = self.history_collision_summary[i][0]
                 frame_assoc = self.history_collision_summary[i][1]
@@ -89,27 +89,7 @@ class OnlineActionDetector(object):
                 writer.writerow(frame_assoc)
         return
 
-    def update_bp_assoc_dct(self, frame_idx, collisions):
-        updateCatchAction = False
-
-        for person in collisions:
-            ball = collisions[person]
-            # Ball has not been caught yet
-            if ball not in self.latest_bp_assoc_dct:
-                self.latest_bp_assoc_dct[ball] = person
-
-            # Ball is caught by a new person
-            elif self.latest_bp_assoc_dct[ball] != person:
-                self.latest_bp_assoc_dct[ball] = person
-                updateCatchAction = True
-
-        if updateCatchAction:
-            ordered_balls = sorted(self.latest_bp_assoc_dct.keys())
-            summary = [self.latest_bp_assoc_dct[ball_id] for ball_id in ordered_balls]
-            self.history_collision_summary.append([frame_idx, summary])
-        return
-
-    def catch_action_correction(self):
+    def correct_catches(self):
         num_balls = len(self.history_collision_summary[-1][1])
         window_size = 20
         size = len(self.history_collision_summary)
@@ -142,6 +122,26 @@ class OnlineActionDetector(object):
             i = j
 
         self.history_collision_summary = frame_catch_frame_assoc
+        return
+
+    def update_bp_assoc_dct(self, frame_idx, collisions):
+        updateCatchAction = False
+
+        for person in collisions:
+            ball = collisions[person]
+            # Ball has not been caught yet
+            if ball not in self.latest_bp_assoc_dct:
+                self.latest_bp_assoc_dct[ball] = person
+
+            # Ball is caught by a new person
+            elif self.latest_bp_assoc_dct[ball] != person:
+                self.latest_bp_assoc_dct[ball] = person
+                updateCatchAction = True
+
+        if updateCatchAction:
+            ordered_balls = sorted(self.latest_bp_assoc_dct.keys())
+            summary = [self.latest_bp_assoc_dct[ball_id] for ball_id in ordered_balls]
+            self.history_collision_summary.append([frame_idx, summary])
         return
 
 def save_pkl(data, filename):
