@@ -10,7 +10,7 @@ YOLO:
   CONF_THRESH: 0.4 #object confidence threshold
   IOU_THRESH: 0.5 #IOU threshold for NMS
 SKIP:
-  SKIP_KEY_FRAMES: 10
+  SKIP_PRED_FRAMES: 10
   SKIP_GT_FRAMES: 1
 VIDEO:
   POOL_H: 1080

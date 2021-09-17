@@ -21,7 +21,7 @@ class ImprovedActionDetector(object):
         self.balls_count = len(self.gt_balls_id)
 
         self.morph_radius = 5
-        self.key_frames = []
+        self.pred_frames = []
         self.EPSILON, self.MAX_DISTANCE = 1e-10, 1.0
 
     def get_frame_tracks_dct(self):
@@ -56,28 +56,28 @@ class ImprovedActionDetector(object):
                 return True, bp_norm_dist_matx, bp_collistion_matx, ball_ids, person_ids
             return False, None, None, None, None
 
-        key_frames = []
+        pred_frames = []
         bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = {}, {}, {}
         for frame_idx, tracks in frame_tracks_dct.items():
             ball_tracks, person_tracks = tracks
             has_collision, bp_norm_dist_matx, bp_collistion_matx, ball_ids, person_ids = collision(ball_tracks, person_tracks)
             if has_collision:
-                key_frames.append(frame_idx)
+                pred_frames.append(frame_idx)
                 bp_norm_dist_history_dct[frame_idx] = bp_norm_dist_matx
                 bp_collision_history_dct[frame_idx] = bp_collistion_matx
                 bp_ids_history_dct[frame_idx] = (ball_ids, person_ids)
-        return key_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct
+        return pred_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct
 
     def write_catches(self, outpath):
         frame_tracks_dct = self.get_frame_tracks_dct()
-        key_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = self.get_dist_collision_history(frame_tracks_dct)
+        pred_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = self.get_dist_collision_history(frame_tracks_dct)
 
         bp_catch_records_dct = {}
         for id in self.gt_balls_id:
             bp_catch_records_dct[id] = np.zeros((self.persons_count, self.frame_idx_history[-1]+1,), dtype=int)
 
         gt_persons_id_arr = np.array(self.gt_persons_id)
-        for frame_idx in key_frames:
+        for frame_idx in pred_frames:
             # print(frame_idx)
             bp_norm_dist_matx  = bp_norm_dist_history_dct[frame_idx]
             bp_collistion_matx = bp_collision_history_dct[frame_idx]
@@ -198,5 +198,5 @@ if __name__ == '__main__':
     gt_pids = load_pkl(os.path.join(saved_tracks_path, 'person_ids.pkl'))
     gt_bids = load_pkl(os.path.join(saved_tracks_path, 'ball_ids.pkl'))
 
-    action_detector = OfflineActionDetector(tracks_history, frames_idx_history, gt_bids, gt_pids)
+    action_detector = ImprovedActionDetector(tracks_history, frames_idx_history, gt_bids, gt_pids)
     action_detector.write_catches(outpath)

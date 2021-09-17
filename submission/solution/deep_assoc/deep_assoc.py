@@ -16,7 +16,7 @@ class DeepAssoc(object):
         self.tracker_ball = Tracker(metric_ball)
 
 
-    def update(self, person_detections, ball_detections, orig_img):
+    def update(self, person_detections, ball_detections, img_h, img_w):
 
         self.tracker_person.update(person_detections)
 
@@ -33,7 +33,7 @@ class DeepAssoc(object):
             if track.is_missed():
                 continue
             box = track.to_tlwh()
-            x1, y1, x2, y2 = self._tlwh_to_xyxy(box, orig_img)
+            x1, y1, x2, y2 = self._tlwh_to_xyxy(box, img_h, img_w)
             active_tracks.append(np.array([x1, y1, x2, y2, track.track_id, track.cls], dtype=np.int))
 
         if active_tracks:
@@ -42,17 +42,16 @@ class DeepAssoc(object):
         return active_tracks
 
 
-    def _tlwh_to_xyxy(self, bbox_tlwh, img):
+    def _tlwh_to_xyxy(self, bbox_tlwh, img_h, img_w):
         """
         TODO:
             Convert bbox from xtl_ytl_w_h to xc_yc_w_h
         Thanks JieChen91@github.com for reporting this bug!
         """
-        height, width = img.shape[:2]
-        x,y,w,h = bbox_tlwh
-        x1 = max(int(x),0)
-        x2 = min(int(x+w),width-1)
-        y1 = max(int(y),0)
-        y2 = min(int(y+h),height-1)
-        return x1,y1,x2,y2
+        x, y, w, h = bbox_tlwh
+        x1 = max(int(x), 0)
+        x2 = min(int(x+w), img_w-1)
+        y1 = max(int(y), 0)
+        y2 = min(int(y+h), img_h-1)
+        return x1, y1, x2, y2
 

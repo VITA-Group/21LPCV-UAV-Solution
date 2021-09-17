@@ -3,6 +3,7 @@ import numpy as np
 class ImagePool(object):
     def __init__(self, pool_size, pool_h, pool_w, img_h, img_w):
         self.pool_size = pool_size
+        self.pool_h, self.pool_w = pool_h, pool_w
         self.ksize = img_h // pool_h
         self.image_pool = np.zeros((pool_size, pool_h, pool_w, 3), dtype=np.uint8)
         # image_pool = np.zeros((pool_size, img_h, img_w, 3), dtype=np.uint8)
@@ -28,6 +29,9 @@ class ImagePool(object):
         self.image_pool[self.tail, :, :, :] = self.dsample_image(img_orig, self.ksize)
         self.idx_pool[self.tail] = idx
         self.tail += 1
+
+    def get_pool_hw(self):
+        return self.pool_h, self.pool_w
 
     def is_full(self):
         return self.tail == self.pool_size

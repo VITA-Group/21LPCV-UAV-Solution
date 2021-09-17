@@ -164,5 +164,5 @@ if __name__ == '__main__':
     gt_pids = load_pkl(os.path.join(saved_tracks_path, 'person_ids.pkl'))
     gt_bids = load_pkl(os.path.join(saved_tracks_path, 'ball_ids.pkl'))
 
-    action_detector = OnlineActionDetector(tracks_history, frames_idx_history, gt_bids, gt_pids)
+    action_detector = BaselineActionDetector(tracks_history, frames_idx_history, gt_bids, gt_pids)
     action_detector.write_catches(outpath)

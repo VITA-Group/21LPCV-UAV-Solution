@@ -17,8 +17,8 @@ from utils.general import (check_img_size, non_max_suppression, scale_coords, xy
 from utils.experimental import (save_pkl, load_pkl)
 from utils.draw_tool import DrawTool
 from utils.detection import Detection
+from utils.parser import get_config
 
-from parser import get_config
 from deep_assoc import DeepAssoc
 from deep_assoc.feature_extractor import Extractor
 
@@ -37,15 +37,12 @@ from torchvision.transforms import InterpolationMode
 torch.backends.quantized.engine = 'qnnpack'
 
 
-
 class Solution(object):
     def __init__(self, opt):
         self.opt = opt
         cfg = get_config()
         cfg.merge_from_file(opt.config_file)
         self.cfg = cfg
-
-        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths, self.cfg.SKIP.SKIP_GT_FRAMES)
 
         # make new output folder
         if not os.path.exists(opt.output):
@@ -75,18 +72,27 @@ class Solution(object):
         fps, w, h = self.dataset.cap.get(cv2.CAP_PROP_FPS), int(self.dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(
             self.dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+        '''
+        Initialize image pool
+        '''
         self.pool = ImagePool(pool_size=self.cfg.VIDEO.POOL_SIZE, pool_h=self.cfg.VIDEO.POOL_H, pool_w=self.cfg.VIDEO.POOL_W, img_h=h, img_w=w)
+
         '''
         Initialize activity region cropper
         '''
         self.activity_region_cropper = ActivityRegionCropper(extra=0.25)
 
+        '''
+        Initialize crops boxes cache
+        '''
+        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths, self.cfg.SKIP.SKIP_GT_FRAMES)
+        all_frames = np.arange(self.dataset.nframes).tolist()
+        self.pred_frames = [idx for idx in all_frames if idx not in self.gt_frames and idx % self.cfg.SKIP.SKIP_PRED_FRAMES == 0]
+        self.cache = CropsBoxesCache(self.pred_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH)
+
+
         self.tracks_history, self.frames_idx_history = [], []
         self.unmatched_tracks_history, self.unmatched_detections_history = {}, {}
-
-        key_frames = np.arange(self.dataset.nframes).tolist()
-        self.key_frames = [idx for idx in key_frames if idx not in self.gt_frames and idx % self.cfg.SKIP.SKIP_KEY_FRAMES == 0]
-        self.cache = CropsBoxesCache(self.key_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH)
 
         if opt.save_img:
             self.img_cache = {}
@@ -104,7 +110,7 @@ class Solution(object):
         self.tracks_history.append(tracks_ltwh)
         self.frames_idx_history.append(frame_idx)
 
-    def collision(self, ball_dets, person_dets):
+    def check_bp_collision(self, ball_dets, person_dets):
         balls_center = 0.5 * (ball_dets[:, :2] + ball_dets[:, 2:4])
         persons_lt, persons_rb = person_dets[:, :2], person_dets[:, 2:4]
         # persons_lt = person_dets[:, :2] - 0.5 * person_dets[:, 2:4]
@@ -164,7 +170,7 @@ class Solution(object):
             ordered_boxes[idx] = gts[i, :4]
         self.cache.update(frame_idx, ordered_crops, ordered_boxes, is_person=is_person)
 
-    def update_key_cache(self, dets, img, frame_idx, max_num, is_person):
+    def update_pred_cache(self, dets, img, frame_idx, max_num, is_person):
         crops = self.get_crops(dets, img)
         boxes = dets[:, :4]
         scores = dets[:, 4]
@@ -179,10 +185,8 @@ class Solution(object):
         self.cache.update(frame_idx, sorted_crops, sorted_boxes, is_person=is_person)
 
     def run(self):
-
-
         frame_idx = 0
-        usable_frames = sorted(self.gt_frames + self.key_frames)
+        usable_frames = sorted(self.gt_frames + self.pred_frames)
         for path, img_orig, vid_cap in self.dataset:
             if frame_idx in usable_frames:
                 self.pool.write(img_orig, frame_idx)
@@ -221,7 +225,7 @@ class Solution(object):
                         self.update_gt_cache(gts_person, img_resized, self.gt_pids, persons_order, idx, is_person=True)
                     if gts_ball.size > 0:
                         self.update_gt_cache(gts_ball, img_resized, self.gt_bids, balls_order, idx, is_person=False)
-                elif idx in self.key_frames:
+                elif idx in self.pred_frames:
                     if self.opt.save_img:
                         self.img_cache[idx] = np.copy(img_resized)
                     '''
@@ -240,7 +244,7 @@ class Solution(object):
                     dets = non_max_suppression(preds[0], self.cfg.YOLO.CONF_THRESH, self.cfg.YOLO.IOU_THRESH, classes=None, agnostic=False)[0]
 
                     if dets.numel() == 0:
-                        self.key_frames.remove(idx)
+                        self.pred_frames.remove(idx)
                         continue
 
                     dets = dets.detach().numpy()
@@ -263,19 +267,19 @@ class Solution(object):
                     dets_person, dets_ball = dets[dets[:,5]==0,:], dets[dets[:,5]==1,:]
 
                     if dets_ball.size == 0 or dets_person.size == 0:
-                        self.key_frames.remove(idx)
+                        self.pred_frames.remove(idx)
                         continue
 
-                    bp_collistion_matx = self.collision(dets_ball, dets_person).reshape(
+                    bp_collistion_matx = self.check_bp_collision(dets_ball, dets_person).reshape(
                                                                         (dets_ball.shape[0], dets_person.shape[0]))
                     if not np.any(bp_collistion_matx):
-                        self.key_frames.remove(idx)
+                        self.pred_frames.remove(idx)
                         continue
 
                     if dets_person.size > 0:
-                        self.update_key_cache(dets_person, img_resized, idx, len(self.gt_pids), is_person=True)
+                        self.update_pred_cache(dets_person, img_resized, idx, len(self.gt_pids), is_person=True)
                     if dets_ball.size > 0:
-                        self.update_key_cache(dets_ball, img_resized, idx, len(self.gt_bids), is_person=False)
+                        self.update_pred_cache(dets_ball, img_resized, idx, len(self.gt_bids), is_person=False)
             self.pool.reset()
 
         gt_btracks_dct, gt_ptracks_dct = {}, {}
@@ -315,10 +319,11 @@ class Solution(object):
         self.deep_assoc.tracker_person.initiate_tracks(gt_ptracks_dct, 0)
         self.deep_assoc.tracker_ball.initiate_tracks(gt_btracks_dct, 1)
 
+        img_h, img_w = self.pool.get_pool_hw()
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
                 person_detections, ball_detections = gt_pdets_dct[frame_idx], gt_bdets_dct[frame_idx]
-                gt_tracks = self.deep_assoc.update(person_detections, ball_detections, img_resized)
+                gt_tracks = self.deep_assoc.update(person_detections, ball_detections, img_h, img_w)
 
                 if len(gt_tracks) > 0:
                     self.save_frames_tracks_history(gt_tracks, frame_idx)
@@ -327,7 +332,7 @@ class Solution(object):
                         DrawTool.draw_tracks(img_resized, gt_tracks, frame_idx)
                         self.vid_writer.write(img_resized)
 
-            elif frame_idx in self.key_frames:
+            elif frame_idx in self.pred_frames:
                 det_crops_person, det_boxes_person = self.cache.fetch(frame_idx, is_person=True)
                 valid_idx = ~np.all(det_boxes_person == 0, axis=1)
                 det_boxes_person = det_boxes_person[valid_idx, ...]
@@ -340,7 +345,7 @@ class Solution(object):
 
                 person_detections = self.wrapup_detections(det_boxes_person, det_crops_person, is_person=True)
                 ball_detections = self.wrapup_detections(det_boxes_ball, det_crops_ball, is_person=False)
-                pred_tracks = self.deep_assoc.update(person_detections, ball_detections, img_resized)
+                pred_tracks = self.deep_assoc.update(person_detections, ball_detections, img_h, img_w)
 
                 if len(pred_tracks) > 0:
                     self.save_frames_tracks_history(pred_tracks, frame_idx)
@@ -447,6 +452,7 @@ def main(vid_src=None, grd_src=None):
         # solution.read_csv_gt_tracks()
     t1 = time.perf_counter()
     print('Total Runtime = %.2f' % (t1 - t0))
+
 
 if __name__ == '__main__':
     parser = default_parser()
