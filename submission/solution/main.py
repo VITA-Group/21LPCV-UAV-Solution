@@ -286,16 +286,10 @@ class Solution(object):
         gt_bdets_dct, gt_pdets_dct = {}, {}
         for frame_idx in range(self.dataset.nframes):
             if frame_idx in self.gt_frames:
-                gt_crops_person, gt_boxes_person = self.cache.fetch(frame_idx, is_person=True)
-                valid_idx = ~np.all(gt_boxes_person == 0, axis=1)
-                gt_boxes_person = gt_boxes_person[valid_idx, ...]
-                gt_crops_person = gt_crops_person[valid_idx, ...]
+                gt_crops_person, gt_boxes_person, valid_idx = self.cache.fetch(frame_idx, is_person=True)
                 selected_pids = np.array(self.gt_pids)[valid_idx]
 
-                gt_crops_ball, gt_boxes_ball = self.cache.fetch(frame_idx, is_person=False)
-                valid_idx = ~np.all(gt_boxes_ball == 0, axis=1)
-                gt_boxes_ball = gt_boxes_ball[valid_idx, ...]
-                gt_crops_ball = gt_crops_ball[valid_idx, ...]
+                gt_crops_ball, gt_boxes_ball, valid_idx = self.cache.fetch(frame_idx, is_person=False)
                 selected_bids = np.array(self.gt_bids)[valid_idx]
 
                 person_detections = self.wrapup_detections(boxes=gt_boxes_person, crops=gt_crops_person, is_person=True)
@@ -333,15 +327,8 @@ class Solution(object):
                         self.vid_writer.write(img_resized)
 
             elif frame_idx in self.pred_frames:
-                det_crops_person, det_boxes_person = self.cache.fetch(frame_idx, is_person=True)
-                valid_idx = ~np.all(det_boxes_person == 0, axis=1)
-                det_boxes_person = det_boxes_person[valid_idx, ...]
-                det_crops_person = det_crops_person[valid_idx, ...]
-
-                det_crops_ball, det_boxes_ball = self.cache.fetch(frame_idx, is_person=False)
-                valid_idx = ~np.all(det_boxes_ball == 0, axis=1)
-                det_boxes_ball = det_boxes_ball[valid_idx, ...]
-                det_crops_ball = det_crops_ball[valid_idx, ...]
+                det_crops_person, det_boxes_person, _ = self.cache.fetch(frame_idx, is_person=True)
+                det_crops_ball, det_boxes_ball, _ = self.cache.fetch(frame_idx, is_person=False)
 
                 person_detections = self.wrapup_detections(det_boxes_person, det_crops_person, is_person=True)
                 ball_detections = self.wrapup_detections(det_boxes_ball, det_crops_ball, is_person=False)

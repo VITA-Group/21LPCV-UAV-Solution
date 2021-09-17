@@ -55,4 +55,9 @@ class CropsBoxesCache(object):
             else:
                 crops = self.gt_balls_crop_cache[pos]
                 boxes = self.gt_balls_box_cache[pos]
-        return crops, boxes
+
+        valid_idx = ~np.all(boxes == 0, axis=1)
+        boxes = boxes[valid_idx, ...]
+        crops = crops[valid_idx, ...]
+
+        return crops, boxes, valid_idx
