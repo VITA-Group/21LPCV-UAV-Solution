@@ -85,7 +85,7 @@ class Solution(object):
         '''
         Initialize crops boxes cache
         '''
-        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_csv_gt_tracks(opt.groundtruths, self.cfg.SKIP.SKIP_GT_FRAMES)
+        self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_gt_tracks_from_csv(opt.groundtruths, self.cfg.SKIP.SKIP_GT_FRAMES)
         all_frames = np.arange(self.dataset.nframes).tolist()
         self.pred_frames = [idx for idx in all_frames if idx not in self.gt_frames and idx % self.cfg.SKIP.SKIP_PRED_FRAMES == 0]
         self.cache = CropsBoxesCache(self.pred_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH)
@@ -123,7 +123,7 @@ class Solution(object):
         )
         return bp_collistion_matx
 
-    def read_csv_gt_tracks(self, filename, sample_rate):
+    def read_gt_tracks_from_csv(self, filename, sample_rate):
         def init_pd_csv_reader(file_name):
             if not os.path.exists(file_name):
                 print("The file", file_name, "doesn't exist.")
@@ -440,7 +440,7 @@ def main(vid_src=None, grd_src=None):
     solution = Solution(args)
     with torch.no_grad():
         solution.run()
-        # solution.read_csv_gt_tracks()
+        # solution.read_gt_tracks_from_csv()
     t1 = time.perf_counter()
     print('Total Runtime = %.2f' % (t1 - t0))
 
