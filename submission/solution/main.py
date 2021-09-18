@@ -102,12 +102,12 @@ class Solution(object):
 
     def save_frames_tracks_history(self, tracks, frame_idx):
         # tracks_cxcywh[:, :2] = 0.5 * (tracks[:, :2] + tracks[:, 2:4])
-        tracks_ltwh = np.zeros_like(tracks[:, :6], dtype=int)
-        tracks_ltwh[:, :2] = tracks[:, :2]
-        tracks_ltwh[:, 2:4] = tracks[:, 2:4] - tracks[:, :2]
-        tracks_ltwh[:, 4:6] = tracks[:, 4:6]
+        tracks_ltrb = np.zeros_like(tracks[:, :6], dtype=int)
+        tracks_ltrb[:, :4] = tracks[:, :4]
+        # tracks_ltwh[:, 2:4] = tracks[:, 2:4] - tracks[:, :2]
+        tracks_ltrb[:, 4:6] = tracks[:, 4:6]
 
-        self.tracks_history.append(tracks_ltwh)
+        self.tracks_history.append(tracks_ltrb)
         self.frames_idx_history.append(frame_idx)
 
     def check_bp_collision(self, ball_dets, person_dets):
@@ -149,17 +149,17 @@ class Solution(object):
             gt_pids += labels[labels[:,0] == 0, 1].astype(int).tolist()
         return [idx for idx in unique_frames if idx % sample_rate == 0], gt_labels, np.unique(gt_pids).tolist(), np.unique(gt_bids).tolist()
 
-    def cxcywh2xyxy(self, bboxes_cxcywh, img):
+    def cxcywh2ltrb(self, bboxes_cxcywh, img):
         img_h, img_w, _ = img.shape  # get image shape
         # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-        bboxes_ltbr = bboxes_cxcywh.clone() if isinstance(bboxes_cxcywh, torch.Tensor) else np.copy(bboxes_cxcywh)
-        bboxes_ltbr[:, 0:2] = bboxes_cxcywh[:, 0:2] - bboxes_cxcywh[:, 2:4] / 2  # top left
-        bboxes_ltbr[:, 2:4] = bboxes_cxcywh[:, 0:2] + bboxes_cxcywh[:, 2:4] / 2  # bottom right
-        bboxes_ltbr[:, 0] = np.maximum(np.minimum(bboxes_ltbr[:, 0], img_w - 1), 0)
-        bboxes_ltbr[:, 1] = np.maximum(np.minimum(bboxes_ltbr[:, 1], img_h - 1), 0)
-        bboxes_ltbr[:, 2] = np.maximum(np.minimum(bboxes_ltbr[:, 2], img_w - 1), 0)
-        bboxes_ltbr[:, 3] = np.maximum(np.minimum(bboxes_ltbr[:, 3], img_h - 1), 0)
-        return bboxes_ltbr
+        bboxes_ltrb = bboxes_cxcywh.clone() if isinstance(bboxes_cxcywh, torch.Tensor) else np.copy(bboxes_cxcywh)
+        bboxes_ltrb[:, 0:2] = bboxes_cxcywh[:, 0:2] - bboxes_cxcywh[:, 2:4] / 2  # top left
+        bboxes_ltrb[:, 2:4] = bboxes_cxcywh[:, 0:2] + bboxes_cxcywh[:, 2:4] / 2  # bottom right
+        bboxes_ltrb[:, 0] = np.maximum(np.minimum(bboxes_ltrb[:, 0], img_w - 1), 0)
+        bboxes_ltrb[:, 1] = np.maximum(np.minimum(bboxes_ltrb[:, 1], img_h - 1), 0)
+        bboxes_ltrb[:, 2] = np.maximum(np.minimum(bboxes_ltrb[:, 2], img_w - 1), 0)
+        bboxes_ltrb[:, 3] = np.maximum(np.minimum(bboxes_ltrb[:, 3], img_h - 1), 0)
+        return bboxes_ltrb
 
     def update_gt_cache(self, gts, img, gt_ids, order, frame_idx, is_person):
         crops = self.get_crops(gts, img)
@@ -209,7 +209,7 @@ class Solution(object):
                     # Remove empty annotation with zeros as placeholder
                     gts_raw = gts_raw[~np.all(gts_raw == 0, axis=1)]
                     gts_scaled = np.multiply(gts_raw, np.array([1.0, 1.0, img_w, img_h, img_w, img_h]))
-                    gts_ltrb = self.cxcywh2xyxy(gts_scaled[:, 2:], img_resized)
+                    gts_ltrb = self.cxcywh2ltrb(gts_scaled[:, 2:], img_resized)
                     # ltrb, id, cls
                     gts = np.concatenate((gts_ltrb, gts_scaled[:, 1:2], gts_scaled[:, 0:1]), 1).astype(int)
                     gts_person, gts_ball = np.copy(gts[gts[:, 5] == 0]), np.copy(gts[gts[:, 5] == 1])
@@ -323,7 +323,9 @@ class Solution(object):
                     self.save_frames_tracks_history(gt_tracks, frame_idx)
                     if self.opt.save_img:
                         img_resized = self.img_cache[frame_idx]
-                        DrawTool.draw_tracks(img_resized, gt_tracks, frame_idx)
+                        bboxes_ltrb, ids, clses = gt_tracks[:, :4], gt_tracks[:, 4], gt_tracks[:, 5]
+                        DrawTool.draw_tracks(img_resized, bboxes_ltrb, ids, clses)
+                        DrawTool.draw_frame_idx(img_resized, frame_idx, 'Groundtruth')
                         self.vid_writer.write(img_resized)
 
             elif frame_idx in self.pred_frames:
@@ -338,7 +340,9 @@ class Solution(object):
                     self.save_frames_tracks_history(pred_tracks, frame_idx)
                     if self.opt.save_img:
                         img_resized = self.img_cache[frame_idx]
-                        DrawTool.draw_tracks(img_resized, pred_tracks, frame_idx)
+                        bboxes_ltrb, ids, clses = pred_tracks[:, :4], pred_tracks[:, 4], pred_tracks[:, 5]
+                        DrawTool.draw_tracks(img_resized, bboxes_ltrb, ids, clses)
+                        DrawTool.draw_frame_idx(img_resized, frame_idx, 'Prediction')
                         self.vid_writer.write(img_resized)
 
         self.detect_action_baseline()
@@ -353,19 +357,19 @@ class Solution(object):
 
         def _xyxy_to_tlwh(bbox_xyxy):
             if isinstance(bbox_xyxy, np.ndarray):
-                bbox_tlwh = bbox_xyxy.copy()
+                bbox_ltwh = bbox_xyxy.copy()
             elif isinstance(bbox_xyxy, torch.Tensor):
-                bbox_tlwh = bbox_xyxy.clone()
-            bbox_tlwh[:, 2:4] = bbox_xyxy[:, 2:4] - bbox_xyxy[:, :2]
-            return bbox_tlwh
+                bbox_ltwh = bbox_xyxy.clone()
+            bbox_ltwh[:, 2:4] = bbox_xyxy[:, 2:4] - bbox_xyxy[:, :2]
+            return bbox_ltwh
 
         features = get_features(crops)
-        bbox_tlwh = _xyxy_to_tlwh(boxes)
+        bbox_ltwh = _xyxy_to_tlwh(boxes)
 
         if is_person:
-            detections = [Detection(bbox_tlwh[i], features[i], 0) for i in range(bbox_tlwh.shape[0])]
+            detections = [Detection(bbox_ltwh[i], features[i], 0) for i in range(bbox_ltwh.shape[0])]
         else:
-            detections = [Detection(bbox_tlwh[i], features[i], 1) for i in range(bbox_tlwh.shape[0])]
+            detections = [Detection(bbox_ltwh[i], features[i], 1) for i in range(bbox_ltwh.shape[0])]
 
         return detections
 

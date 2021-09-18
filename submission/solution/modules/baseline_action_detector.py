@@ -24,7 +24,7 @@ class BaselineActionDetector(object):
         frame_tracks_dct = OrderedDict()
         for i, frame_idx in enumerate(self.frame_idx_history):
             tracks = self.tracks_history[i]
-            tracks[:, :2] = tracks[:, :2] + tracks[:, 2:4] / 2
+            # tracks[:, :2] = tracks[:, :2] + tracks[:, 2:4] / 2
             person_tracks = tracks[tracks[:, 5] == 0, :]
             ball_tracks = tracks[tracks[:, 5] == 1, :]
             if person_tracks.size > 0 and ball_tracks.size > 0:
@@ -33,9 +33,10 @@ class BaselineActionDetector(object):
 
     def update_catches(self, tracks, frame_idx):
         def get_bp_collision_dist(ball_tracks, person_tracks):
-            balls_center, persons_center = ball_tracks[:, :2], person_tracks[:, :2]
-            persons_lt = person_tracks[:, :2] - 0.5 * person_tracks[:, 2:4]
-            persons_rb = person_tracks[:, :2] + 0.5 * person_tracks[:, 2:4]
+            balls_center = 0.5 * (ball_tracks[:, :2] + ball_tracks[:, 2:4])
+            persons_center = 0.5 * (person_tracks[:, :2] + person_tracks[:, 2:4])
+            persons_lt = person_tracks[:, :2]
+            persons_rb = person_tracks[:, 2:4]
             bp_collistion_matx = np.logical_and(
                 np.logical_and(*np.dsplit(
                     np.subtract(balls_center[:, np.newaxis, :], persons_lt[np.newaxis, :, :]) >= 0, 2)),

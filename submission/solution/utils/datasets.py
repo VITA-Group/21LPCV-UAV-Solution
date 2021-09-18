@@ -13,7 +13,9 @@ vid_formats = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # accep
 
 
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640, stride=32):
+    def __init__(self, path):
+        vid_formats = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
+
         p = str(Path(path).absolute())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
@@ -25,19 +27,15 @@ class LoadImages:  # for inference
             raise Exception(f'ERROR: {p} does not exist')
 
         videos = [x for x in files if x.split('.')[-1].lower() in vid_formats]
-        nv = len(videos)
+        self.nf = len(videos)
 
-        self.img_size = img_size
-        self.stride = stride
         self.files = videos
-        self.nf = nv  # number of files
-        self.video_flag = [True] * nv
         if any(videos):
             self.new_video(videos[0])  # new video
         else:
             self.cap = None
-        assert self.nf > 0, f'No images or videos found in {p}. ' \
-                            f'Supported formats are:\nimages: {img_formats}\nvideos: {vid_formats}'
+        assert self.nf > 0, f'No videos found in {p}. ' \
+                            f'Supported formats are:\nvideos: {vid_formats}'
 
     def __iter__(self):
         self.count = 0
@@ -48,35 +46,20 @@ class LoadImages:  # for inference
             raise StopIteration
         path = self.files[self.count]
 
-        if self.video_flag[self.count]:
-            # Read video
-            ret_val, img0 = self.cap.read()
-            if not ret_val:
-                self.count += 1
-                self.cap.release()
-                if self.count == self.nf:  # last video
-                    raise StopIteration
-                else:
-                    path = self.files[self.count]
-                    self.new_video(path)
-                    ret_val, img0 = self.cap.read()
-
-            self.frame += 1
-            # print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
-            # print(f'({self.frame}/{self.nframes}) ', end='\n')
-        else:
-            # Read image
+        # Read video
+        ret_val, img0 = self.cap.read()
+        if not ret_val:
             self.count += 1
-            img0 = cv2.imread(path)  # BGR
-            assert img0 is not None, 'Image Not Found ' + path
-            print(f'image {self.count}/{self.nf} {path}: ', end='')
+            self.cap.release()
+            if self.count == self.nf:  # last video
+                raise StopIteration
+            else:
+                path = self.files[self.count]
+                self.new_video(path)
+                ret_val, img0 = self.cap.read()
 
-        # # Padded resize
-        # img = letterbox(img0, self.img_size, stride=self.stride)[0]
-
-        # # Convert
-        # img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        # img = np.ascontiguousarray(img)
+        self.frame += 1
+        # print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
 
         return path, img0, self.cap
 
