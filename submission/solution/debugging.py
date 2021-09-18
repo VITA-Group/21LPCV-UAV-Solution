@@ -18,8 +18,9 @@ import torch
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, dir_path)
 
-from debugging_utils import (LoadImages, draw_frame_idx, draw_tracks, draw_bp_assoc, draw_reid_errors, draw_unmatched_errors,
-                             load_labels_json, save_dict, load_dict)
+from utils.datasets import LoadImages
+from utils.draw_tool import draw_frame_idx, draw_tracks, draw_bp_assoc, draw_reid_errors, draw_unmatched_errors
+from utils.experimental import save_pkl, load_pkl, load_labels_json
 
 
 def init_pd_csv_reader(file_name):
@@ -113,10 +114,10 @@ if __name__ == '__main__':
     df_pred = pd.DataFrame(pred_action_labels, columns=tuple(pred_csv_columns)).to_numpy()
     print(df_pred.shape[0], df_pred.shape[1])
 
-    tracks_data = load_dict(os.path.join(pred_tracking_path, 'tracks_history.pkl'))
-    frames_idx_data = load_dict(os.path.join(pred_tracking_path, 'frames_idx_history.pkl'))
-    unmatched_detections_history = load_dict(os.path.join(pred_tracking_path, 'unmatched_detections_history.pkl'))
-    unmatched_tracks_history = load_dict(os.path.join(pred_tracking_path, 'unmatched_tracks_history.pkl'))
+    tracks_data = load_pkl(os.path.join(pred_tracking_path, 'tracks_history.pkl'))
+    frames_idx_data = load_pkl(os.path.join(pred_tracking_path, 'frames_idx_history.pkl'))
+    unmatched_detections_history = load_pkl(os.path.join(pred_tracking_path, 'unmatched_detections_history.pkl'))
+    unmatched_tracks_history = load_pkl(os.path.join(pred_tracking_path, 'unmatched_tracks_history.pkl'))
 
     pred_tracks_dct = {}
     for i, frame_idx in enumerate(frames_idx_data):
@@ -146,33 +147,33 @@ if __name__ == '__main__':
 
         repeat = 1
 
-        # if vid_writer is None:
-        #     fps, w, h = vid_cap.get(cv2.CAP_PROP_FPS), int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))*2, int(
-        #         vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) * 2
-        #     vid_writer = cv2.VideoWriter(os.path.join(debugging_video_path, '{}.m4v'.format(args.video_name)), cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, (w, h))
+        if vid_writer is None:
+            fps, w, h = vid_cap.get(cv2.CAP_PROP_FPS), int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))*2, int(
+                vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) * 2
+            vid_writer = cv2.VideoWriter(os.path.join(debugging_video_path, '{}.m4v'.format(args.video_name)), cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), fps, (w, h))
 
 
-        # if frame_idx in gt_tracks_dct:
-        #     gt_tracks = gt_tracks_dct[frame_idx]
-        #     gt_clses, gt_ids, gt_bboxes_ltwh = gt_tracks[:, 0], gt_tracks[:, 1], gt_tracks[:, 2:6]
-        #     draw_tracks(img_gt_tracks, bboxes_ltwh=gt_bboxes_ltwh, ids=gt_ids, clses=gt_clses)
-        #     if frame_idx in gt_action_indices:
-        #         current_assocs_gt = list(zip(pred_video_ballcolor_dct[args.video_name],
-        #                                      df_gt[gt_action_indices.index(frame_idx), 1:].tolist()))
-        #         draw_bp_assoc(img_gt_tracks, gt_tracks, prev_assocs_gt, current_assocs_gt)
-        #         prev_assocs_gt = current_assocs_gt
-        #         repeat = args.pause_duration
+        if frame_idx in gt_tracks_dct:
+            gt_tracks = gt_tracks_dct[frame_idx]
+            gt_clses, gt_ids, gt_bboxes_ltrb = gt_tracks[:, 0], gt_tracks[:, 1], gt_tracks[:, 2:6]
+            draw_tracks(img_gt_tracks, bboxes_ltrb=gt_bboxes_ltrb, ids=gt_ids, clses=gt_clses)
+            if frame_idx in gt_action_indices:
+                current_assocs_gt = list(zip(pred_video_ballcolor_dct[args.video_name],
+                                             df_gt[gt_action_indices.index(frame_idx), 1:].tolist()))
+                draw_bp_assoc(img_gt_tracks, gt_tracks, prev_assocs_gt, current_assocs_gt)
+                prev_assocs_gt = current_assocs_gt
+                repeat = args.pause_duration
 
-        # if frame_idx in pred_tracks_dct:
-        #     pred_tracks = pred_tracks_dct[frame_idx]
-        #     pred_clses, pred_ids, pred_bboxes_ltwh = pred_tracks[:, 0], pred_tracks[:, 1], pred_tracks[:, 2:6]
-        #     draw_tracks(img_pred_tracks, bboxes_ltwh=pred_bboxes_ltwh, ids=pred_ids, clses=pred_clses)
-        #     if frame_idx in pred_action_indices:
-        #         current_assocs_pred = list(zip(pred_video_ballcolor_dct[args.video_name],
-        #                                        df_pred[pred_action_indices.index(frame_idx), 1:].tolist()))
-        #         draw_bp_assoc(img_pred_tracks, pred_tracks, prev_assocs_pred, current_assocs_pred)
-        #         prev_assocs_pred = current_assocs_pred
-        #         repeat = args.pause_duration
+        if frame_idx in pred_tracks_dct:
+            pred_tracks = pred_tracks_dct[frame_idx]
+            pred_clses, pred_ids, pred_bboxes_ltrb = pred_tracks[:, 0], pred_tracks[:, 1], pred_tracks[:, 2:6]
+            draw_tracks(img_pred_tracks, bboxes_ltrb=pred_bboxes_ltrb, ids=pred_ids, clses=pred_clses)
+            if frame_idx in pred_action_indices:
+                current_assocs_pred = list(zip(pred_video_ballcolor_dct[args.video_name],
+                                               df_pred[pred_action_indices.index(frame_idx), 1:].tolist()))
+                draw_bp_assoc(img_pred_tracks, pred_tracks, prev_assocs_pred, current_assocs_pred)
+                prev_assocs_pred = current_assocs_pred
+                repeat = args.pause_duration
 
 
         if frame_idx in pred_tracks_dct and frame_idx in gt_tracks_dct:
@@ -182,23 +183,23 @@ if __name__ == '__main__':
             repeat = 10 if repeat == 1 and has_reid_error else repeat
 
 
-        # if frame_idx in pred_tracks_dct:
-        #     unmatched_detects, unmatched_tracks = [], []
-        #     has_unmatched_error = False
-        #     if frame_idx in unmatched_detections_history:
-        #         unmatched_detects = unmatched_detections_history[frame_idx]
-        #     if frame_idx in unmatched_tracks_history:
-        #         unmatched_tracks = unmatched_tracks_history[frame_idx]
-        #     if frame_idx in unmatched_detections_history or frame_idx in unmatched_tracks_history:
-        #         draw_unmatched_errors(img_unmatched_error, unmatched_tracks, unmatched_detects)
-        #         repeat = 10 if repeat == 1 else repeat
+        if frame_idx in pred_tracks_dct:
+            unmatched_detects, unmatched_tracks = [], []
+            has_unmatched_error = False
+            if frame_idx in unmatched_detections_history:
+                unmatched_detects = unmatched_detections_history[frame_idx]
+            if frame_idx in unmatched_tracks_history:
+                unmatched_tracks = unmatched_tracks_history[frame_idx]
+            if frame_idx in unmatched_detections_history or frame_idx in unmatched_tracks_history:
+                draw_unmatched_errors(img_unmatched_error, unmatched_tracks, unmatched_detects)
+                repeat = 10 if repeat == 1 else repeat
 
-        # for _ in range(repeat):
-        #     outcome = np.concatenate(
-        #                     (np.concatenate((img_pred_tracks, img_gt_tracks), axis=0),
-        #                      np.concatenate((img_reid_error, img_unmatched_error), axis=0)
-        #                      ), axis=1)
-        #     vid_writer.write(outcome)
+        for _ in range(repeat):
+            outcome = np.concatenate(
+                            (np.concatenate((img_pred_tracks, img_gt_tracks), axis=0),
+                             np.concatenate((img_reid_error, img_unmatched_error), axis=0)
+                             ), axis=1)
+            vid_writer.write(outcome)
         frame_idx += 1
         # if frame_idx >= 150:
         #     break
