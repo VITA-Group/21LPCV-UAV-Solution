@@ -1,5 +1,4 @@
 import cv2
-from .enums import ObjectCategory
 import numpy as np
 
 class DrawTool(object):
