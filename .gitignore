@@ -5,7 +5,9 @@
 **/legacy
 **/.idea
 **/.DS_Store
-__pycache__/*
+**/__pycache__
 *.vscode
 **/outputs
 **/inputs
+*.pyc
+*.pyo
