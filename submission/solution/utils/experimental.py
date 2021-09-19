@@ -206,15 +206,10 @@ def min_cost_matching(distance_metric, max_distance, gts, annots):
 
 # clses, ids, bboxes_tlbr = bboxes[:, 0], bboxes[:, 1], bboxes[:, 2:6]
 def id_correction(gts, annots, track_gt_color_idMap, track_gt_noncolor_idMap):
-    # There are unmatched detections and unmatched tracks left
     matches, unmatched_gts, unmatched_annots = \
-        min_cost_matching(iou_cost, 0.5, gts[:, 2:6], annots[:, 2:6])
-    print(annots.shape)
-    print(gts.shape)
-    print(unmatched_gts)
-    print(unmatched_annots)
+        min_cost_matching(iou_cost, 0.125, gts[:, 2:6], annots[:, 2:6])
     if unmatched_gts or unmatched_annots:
-        print('unmatched official ground-truths or our annotation')
+        print('unmatched ground-truths annotation or unofficial annotation')
         return
     # assert not unmatched_gts and not unmatched_annots, 'unmatched official ground-truths or our annotation'
 
