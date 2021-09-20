@@ -20,7 +20,7 @@ if __name__ == '__main__':
 		'4p1b_01A2': '4p1b_01A2_action_noisy.csv'
 	}
 
-	correct = DataSet(file_name=os.path.join('action_labels', vname_csv_mapping[args.submitted]))
+	correct = DataSet(file_name=os.path.join('data/action_labels', vname_csv_mapping[args.submitted]))
 	baseline_submitted = DataSet(file_name=os.path.join('data/outputs', '{}_baseline_out.csv'.format(args.submitted)))
 	improved_submitted = DataSet(file_name=os.path.join('data/outputs', '{}_improved_out.csv'.format(args.submitted)))
 	print(args.submitted)
