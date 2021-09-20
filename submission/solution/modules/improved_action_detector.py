@@ -180,7 +180,7 @@ class ImprovedActionDetector(object):
 
 if __name__ == '__main__':
     vid_name = '7p3b_02M'
-    dst = 'outputs'
+    dst = 'data/outputs'
     outpath = os.path.join(dst, vid_name, vid_name + '_out.csv')
     saved_tracks_path = os.path.join(dst, vid_name, 'tracking')
 

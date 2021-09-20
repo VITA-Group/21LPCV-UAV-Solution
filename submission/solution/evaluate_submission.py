@@ -21,8 +21,8 @@ if __name__ == '__main__':
 	}
 
 	correct = DataSet(file_name=os.path.join('action_labels', vname_csv_mapping[args.submitted]))
-	baseline_submitted = DataSet(file_name=os.path.join('outputs', '{}_baseline_out.csv'.format(args.submitted)))
-	improved_submitted = DataSet(file_name=os.path.join('outputs', '{}_improved_out.csv'.format(args.submitted)))
+	baseline_submitted = DataSet(file_name=os.path.join('data/outputs', '{}_baseline_out.csv'.format(args.submitted)))
+	improved_submitted = DataSet(file_name=os.path.join('data/outputs', '{}_improved_out.csv'.format(args.submitted)))
 	print(args.submitted)
 	print('Baseline Action Detection')
 	print(Compare(correct, baseline_submitted, args.threshold))

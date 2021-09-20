@@ -41,7 +41,7 @@ if __name__ == '__main__':
     parser = default_parser()
     args = parser.parse_args()
 
-    src, dst = os.path.join(dir_path, 'inputs', args.video_name), os.path.join(dir_path, 'outputs', args.video_name)
+    src, dst = os.path.join(dir_path, 'data/inputs', args.video_name), os.path.join(dir_path, 'data/outputs', args.video_name)
 
     gt_init_tracks_path = os.path.join(src, '{}_init.csv'.format(args.video_name))
     gt_tracks_path = os.path.join(src, 'labels')

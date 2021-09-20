@@ -377,9 +377,9 @@ class Solution(object):
 
 def default_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--source', type=str, default=os.path.join(dir_path, 'inputs/7p3b_02M/7p3b_02M.m4v'), help='source')
-    parser.add_argument('--output', type=str, default=os.path.join(dir_path, 'outputs'), help='output folder')
-    parser.add_argument('--groundtruths', default=os.path.join(dir_path, 'inputs/7p3b_02M/7p3b_02M_init.csv'), help='path to the groundtruths.txt or \'disable\'')
+    parser.add_argument('--source', type=str, default=os.path.join(dir_path, 'data/inputs/7p3b_02M/7p3b_02M.m4v'), help='source')
+    parser.add_argument('--output', type=str, default=os.path.join(dir_path, 'data/outputs'), help='output folder')
+    parser.add_argument('--groundtruths', default=os.path.join(dir_path, 'data/inputs/7p3b_02M/7p3b_02M_init.csv'), help='path to the groundtruths.txt or \'disable\'')
     parser.add_argument("--config_file", type=str, default=os.path.join(dir_path, "configs.yaml"))
     parser.add_argument('--fourcc', type=str, default='mp4v', help='output video codec (verify ffmpeg support)')
     parser.add_argument('--save-img', action='store_true', help='save video to outputs')
@@ -398,7 +398,7 @@ def main(vid_src=None, grd_src=None):
     parser = default_parser()
     if vid_src == None and grd_src == None:
         vid_src, grd_src = sys.argv[1], sys.argv[2]
-    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs'])
+    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './data/outputs'])
 
     t0 = time.perf_counter()
     solution = Solution(args)

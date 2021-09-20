@@ -6,7 +6,6 @@ class ImagePool(object):
         self.pool_h, self.pool_w = pool_h, pool_w
         self.ksize = img_h // pool_h
         self.image_pool = np.zeros((pool_size, pool_h, pool_w, 3), dtype=np.uint8)
-        # image_pool = np.zeros((pool_size, img_h, img_w, 3), dtype=np.uint8)
         self.idx_pool = np.zeros((pool_size,), dtype=np.int32)
         self.tail = 0
         self.head = 0
