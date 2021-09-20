@@ -20,35 +20,8 @@ sys.path.insert(0, dir_path)
 
 from utils.datasets import LoadImages
 from utils.draw_tool import draw_frame_idx, draw_tracks, draw_bp_assoc, draw_reid_errors, draw_unmatched_errors
-from utils.experimental import save_pkl, load_pkl, load_labels_json
+from utils.experimental import save_pkl, load_pkl, load_labels_json, load_labels_from_csv
 
-
-def init_pd_csv_reader(file_name):
-    if not os.path.exists(file_name):
-        print("The file", file_name, "doesn't exist.")
-        exit(1)
-    current_file_data = pd.read_csv(file_name, sep=',')
-    return current_file_data
-
-
-def load_labels(current_file_data, frame_number=-1):
-    frame = current_file_data[(current_file_data["Frame"] == frame_number)]
-    gt_labels = torch.tensor(frame[["Class", "ID", "X", "Y", "Width", "Height"]].values)
-    gt_labels = torch.mul(gt_labels, torch.tensor([1.0, 1.0, 1920, 1080, 1920, 1080]))
-    return gt_labels
-
-
-def load_labels_from_csv(filename):
-    gt_annots_dct = {}
-    csv_file_data = init_pd_csv_reader(filename)
-    unique_frames = np.unique(csv_file_data["Frame"].to_numpy())
-
-    for frame in unique_frames:
-        labels = load_labels(csv_file_data, frame_number=frame).detach().numpy()
-        labels[:, 2:4] -= 0.5 * labels[:, 4:6]
-        labels = labels.astype(int)
-        gt_annots_dct[frame] = labels
-    return gt_annots_dct
 
 def default_parser():
     parser = argparse.ArgumentParser()
@@ -56,36 +29,42 @@ def default_parser():
     parser.add_argument('--pause_duration', type=int, default=60, help='the pause duration for catch action')
     return parser
 
+video_resolution_dct = {
+    '4p1b_01A2': (2160, 3840),
+    '5p2b_01A1': (2160, 3840),
+    '5p4b_01A2': (2160, 3840),
+    '5p5b_03A1': (2160, 3840),
+    '7p3b_02M': (1080, 1920),
+}
+
 if __name__ == '__main__':
     parser = default_parser()
     args = parser.parse_args()
 
-    dataset_path = os.path.join(dir_path, 'inputs', args.video_name)
-    gt_labels_path = os.path.join(dir_path, 'inputs', args.video_name, '{}_init.csv'.format(args.video_name))
+    src, dst = os.path.join(dir_path, 'inputs', args.video_name), os.path.join(dir_path, 'outputs', args.video_name)
 
-    labels_path = os.path.join(dir_path, 'inputs', args.video_name, 'labels')
-    pseudo_labels_path = os.path.join(dir_path, 'inputs', args.video_name, 'pseudo_labels')
-    gt_action_labels_path = os.path.join(dir_path, 'inputs', args.video_name, '{}_action_noisy.csv'.format(args.video_name))
+    gt_init_tracks_path = os.path.join(src, '{}_init.csv'.format(args.video_name))
+    gt_tracks_path = os.path.join(src, 'labels')
+    pseudo_tracks_path = os.path.join(src, 'pseudo_labels')
+    gt_action_labels_path = os.path.join(src, '{}_action_noisy.csv'.format(args.video_name))
 
+    pred_tracks_path = os.path.join(dst, 'offline_action_detection')
+    pred_action_labels_path = os.path.join(dst, '{}_out.csv'.format(args.video_name))
 
-
-    pred_action_labels_path = os.path.join(dir_path, 'outputs', '{}_out.csv'.format(args.video_name))
-    pred_tracking_path = os.path.join(dir_path, 'outputs', args.video_name, 'offline_action_detection')
-
-    debugging_video_path = os.path.join(dir_path, 'outputs', os.path.basename(args.video_name), 'debugging')
-
-    gt_annots_dct = load_labels_from_csv(gt_labels_path)
-
+    debugging_video_path = os.path.join(dst, 'debugging')
     if not os.path.exists(debugging_video_path):
         os.makedirs(debugging_video_path)
 
-    video_annots_dct = load_labels_json(labels_path)
+    resolution = video_resolution_dct[args.video_name]
+    gt_init_tracks_dct = load_labels_from_csv(gt_init_tracks_path, img_h=resolution[0], img_w=resolution[1])
 
-    video_annots_dct.update(gt_annots_dct)
+    gt_tracks_dct = load_labels_json(gt_tracks_path)
 
-    video_pseudo_annots_dct = load_labels_json(pseudo_labels_path)
+    gt_tracks_dct.update(gt_init_tracks_dct)
 
-    gt_tracks_dct = {**video_annots_dct, **video_pseudo_annots_dct}
+    pseudo_tracks_dct = load_labels_json(pseudo_tracks_path)
+
+    gt_tracks_dct = {**gt_tracks_dct, **pseudo_tracks_dct}
 
     gt_video_ballcolor_dct = {
         '4p1b_01A2' : ['5_blue'],
@@ -114,10 +93,10 @@ if __name__ == '__main__':
     df_pred = pd.DataFrame(pred_action_labels, columns=tuple(pred_csv_columns)).to_numpy()
     print(df_pred.shape[0], df_pred.shape[1])
 
-    tracks_data = load_pkl(os.path.join(pred_tracking_path, 'tracks_history.pkl'))
-    frames_idx_data = load_pkl(os.path.join(pred_tracking_path, 'frames_idx_history.pkl'))
-    unmatched_detections_history = load_pkl(os.path.join(pred_tracking_path, 'unmatched_detections_history.pkl'))
-    unmatched_tracks_history = load_pkl(os.path.join(pred_tracking_path, 'unmatched_tracks_history.pkl'))
+    tracks_data = load_pkl(os.path.join(pred_tracks_path, 'tracks_history.pkl'))
+    frames_idx_data = load_pkl(os.path.join(pred_tracks_path, 'frames_idx_history.pkl'))
+    unmatched_detections_history = load_pkl(os.path.join(pred_tracks_path, 'unmatched_detections_history.pkl'))
+    unmatched_tracks_history = load_pkl(os.path.join(pred_tracks_path, 'unmatched_tracks_history.pkl'))
 
     pred_tracks_dct = {}
     for i, frame_idx in enumerate(frames_idx_data):
@@ -125,7 +104,7 @@ if __name__ == '__main__':
 
     vid_writer = None
 
-    dataset = LoadImages(dataset_path)
+    dataset = LoadImages(src)
 
     frame_idx = 0
     gt_action_indices = df_gt[:, 0].tolist()

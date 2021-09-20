@@ -14,7 +14,7 @@ sys.path.insert(0, dir_path)
 
 from utils.datasets import LoadImages, letterbox
 from utils.general import (check_img_size, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, postprocess)
-from utils.experimental import (save_pkl, load_pkl)
+from utils.experimental import (save_pkl, load_pkl, init_pd_csv_reader, load_selected_labels_csv)
 from utils.draw_tool import DrawTool
 from utils.detection import Detection
 from utils.parser import get_config
@@ -24,7 +24,6 @@ from deep_assoc import DeepAssoc
 from deep_assoc.feature_extractor import Extractor
 
 
-import pandas as pd
 
 from modules.baseline_action_detector import BaselineActionDetector
 from modules.improved_action_detector import ImprovedActionDetector
@@ -115,17 +114,6 @@ class Solution(object):
         return bp_collistion_matx
 
     def read_gt_tracks_from_csv(self, filename, sample_rate):
-        def init_pd_csv_reader(file_name):
-            if not os.path.exists(file_name):
-                print("The file", file_name, "doesn't exist.")
-                exit(1)
-            current_file_data = pd.read_csv(file_name, sep=',')
-            return current_file_data
-
-        def load_labels(csv_file_data, frame_number=-1):
-            frame = csv_file_data[(csv_file_data["Frame"] == frame_number)]
-            return frame[["Class", "ID", "X", "Y", "Width", "Height"]].values
-
         csv_file_data = init_pd_csv_reader(filename)
         unique_frames = np.sort(np.unique(csv_file_data["Frame"].to_numpy())).tolist()
         unique_ids = np.sort(np.unique(csv_file_data["ID"].to_numpy()))
@@ -134,7 +122,7 @@ class Solution(object):
 
         gt_pids, gt_bids = [], []
         for i, frame_idx in enumerate(unique_frames):
-            labels = load_labels(csv_file_data, frame_number=frame_idx)
+            labels = load_selected_labels_csv(csv_file_data, frame_number=frame_idx)
             gt_labels[i, :labels.shape[0], :] = labels
             gt_bids += labels[labels[:,0] == 1, 1].astype(int).tolist()
             gt_pids += labels[labels[:,0] == 0, 1].astype(int).tolist()
@@ -326,7 +314,7 @@ class Solution(object):
 
         self.detect_action_baseline()
         self.detect_action_improved()
-        self.save_tracks_history(self.tracks_history, self.frames_idx_history, self.gt_bids, self.gt_pids)
+        self.save_tracks_history_to_disk(self.tracks_history, self.frames_idx_history, self.gt_bids, self.gt_pids)
 
     def wrapup_detections(self, boxes, crops, is_person):
         features = self.extractor(crops)
@@ -353,7 +341,7 @@ class Solution(object):
             im_crops.append(np.array(transform(im)))
         return im_crops
 
-    def save_tracks_history(self, tracks_history, frames_idx_history, ball_ids, person_ids):
+    def save_tracks_history_to_disk(self, tracks_history, frames_idx_history, ball_ids, person_ids):
         save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'tracking')
         if not os.path.exists(save_path):
             os.makedirs(save_path)

@@ -105,14 +105,7 @@ def init_pd_csv_reader(file_name):
     return current_file_data
 
 
-def load_labels(current_file_data, frame_number=-1):
-    frame = current_file_data[(current_file_data["Frame"] == frame_number)]
-    gt_labels = torch.tensor(frame[["Class", "ID", "X", "Y", "Width", "Height"]].values)
-    gt_labels = torch.mul(gt_labels, torch.tensor([1.0, 1.0, 1920*2, 1080*2, 1920*2, 1080*2]))
-    return gt_labels
-
-
-def load_labels_csv(frame_number, current_file_data):
+def load_selected_labels_csv(csv_file_data, frame_number):
     '''
     Parameter:
         file_name:      path to the label file. groundtruths.txt
@@ -132,22 +125,24 @@ def load_labels_csv(frame_number, current_file_data):
                         empty tensor if the requested frame doesn't exist in the label file
             format:     ["Class","ID","X","Y","Width","Height"]
     '''
-    frame = current_file_data[(current_file_data["Frame"] == frame_number)]
+    frame = csv_file_data[(csv_file_data["Frame"] == frame_number)]
     pt_frame = np.asarray(frame[["Class", "ID", "X", "Y", "Width", "Height"]].values)
     return pt_frame
 
 
-def load_labels_from_csv(filename):
-    gt_annots_dct = {}
+def load_labels_from_csv(filename, img_h, img_w):
+    gt_tracks_dct = {}
     csv_file_data = init_pd_csv_reader(filename)
     unique_frames = np.unique(csv_file_data["Frame"].to_numpy())
 
     for frame in unique_frames:
-        labels = load_labels(csv_file_data, frame_number=frame).detach().numpy()
+        labels = load_selected_labels_csv(csv_file_data, frame_number=frame)
+        labels = np.multiply(labels, np.asarray([1.0, 1.0, img_w, img_h, img_w, img_h]))
+        # cx,cy,w,h -> l,t,w,h
         labels[:, 2:4] -= 0.5 * labels[:, 4:6]
         labels = labels.astype(int)
-        gt_annots_dct[frame] = labels
-    return gt_annots_dct
+        gt_tracks_dct[frame] = labels
+    return gt_tracks_dct
 
 
 def iou_cost(gts, annots, gts_indices, annots_indices):
