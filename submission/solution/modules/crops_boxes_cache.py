@@ -24,38 +24,35 @@ class CropsBoxesCache(object):
         if frame_idx in self.pred_frames:
             pos = self.pred_frames.index(frame_idx)
             if is_person:
-                self.pred_persons_crop_cache[pos][:num_detections] = crops
-                self.pred_persons_box_cache[pos][:num_detections] = boxes
+                crop_cache, box_cache = self.pred_persons_crop_cache, self.pred_persons_box_cache
             else:
-                self.pred_balls_crop_cache[pos][:num_detections] = crops
-                self.pred_balls_box_cache[pos][:num_detections] = boxes
-        if frame_idx in self.gt_frames:
+                crop_cache, box_cache = self.pred_balls_crop_cache, self.pred_balls_box_cache
+        elif frame_idx in self.gt_frames:
             pos = self.gt_frames.index(frame_idx)
             if is_person:
-                self.gt_persons_crop_cache[pos][:num_detections] = crops
-                self.gt_persons_box_cache[pos][:num_detections] = boxes
+                crop_cache, box_cache = self.gt_persons_crop_cache, self.gt_persons_box_cache
             else:
-                self.gt_balls_crop_cache[pos][:num_detections] = crops
-                self.gt_balls_box_cache[pos][:num_detections] = boxes
+                crop_cache, box_cache = self.gt_balls_crop_cache, self.gt_balls_box_cache
+        crop_cache[pos][:num_detections] = crops
+        box_cache[pos][:num_detections] = boxes
+
+        return
 
     def fetch(self, frame_idx, is_person):
         if frame_idx in self.pred_frames:
             pos = self.pred_frames.index(frame_idx)
             if is_person:
-                crops = self.pred_persons_crop_cache[pos]
-                boxes = self.pred_persons_box_cache[pos]
+                crop_cache, box_cache = self.pred_persons_crop_cache, self.pred_persons_box_cache
             else:
-                crops = self.pred_balls_crop_cache[pos]
-                boxes = self.pred_balls_box_cache[pos]
-        if frame_idx in self.gt_frames:
+                crop_cache, box_cache = self.pred_balls_crop_cache, self.pred_balls_box_cache
+        elif frame_idx in self.gt_frames:
             pos = self.gt_frames.index(frame_idx)
             if is_person:
-                crops = self.gt_persons_crop_cache[pos]
-                boxes = self.gt_persons_box_cache[pos]
+                crop_cache, box_cache = self.gt_persons_crop_cache, self.gt_persons_box_cache
             else:
-                crops = self.gt_balls_crop_cache[pos]
-                boxes = self.gt_balls_box_cache[pos]
+                crop_cache, box_cache = self.gt_balls_crop_cache, self.gt_balls_box_cache
 
+        crops, boxes = crop_cache[pos], box_cache[pos]
         valid_idx = ~np.all(boxes == 0, axis=1)
         boxes = boxes[valid_idx, ...]
         crops = crops[valid_idx, ...]
