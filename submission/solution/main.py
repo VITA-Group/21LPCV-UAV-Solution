@@ -88,7 +88,9 @@ class Solution(object):
         self.gt_frames, self.gt_labels_history, self.gt_pids, self.gt_bids = self.read_gt_tracks_from_csv(opt.groundtruths, self.cfg.SKIP.SKIP_GT_FRAMES)
         all_frames = np.arange(self.dataset.nframes).tolist()
         self.pred_frames = [idx for idx in all_frames if idx not in self.gt_frames and idx % self.cfg.SKIP.SKIP_PRED_FRAMES == 0]
-        self.cache = CropsBoxesCache(self.pred_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH)
+        self.cache = CropsBoxesCache(self.pred_frames, self.gt_frames, len(self.gt_pids), len(self.gt_bids),
+                                     self.cfg.DEEPASSOC.PERSON_CROP_HEIGHT, self.cfg.DEEPASSOC.PERSON_CROP_WIDTH,
+                                     self.cfg.DEEPASSOC.BALL_CROP_HEIGHT, self.cfg.DEEPASSOC.BALL_CROP_WIDTH)
 
 
         self.tracks_history, self.frames_idx_history = [], []
@@ -129,8 +131,10 @@ class Solution(object):
         return [idx for idx in unique_frames if idx % sample_rate == 0], gt_labels, np.unique(gt_pids).tolist(), np.unique(gt_bids).tolist()
 
     def update_gt_cache(self, gts, img, gt_ids, order, frame_idx, is_person):
-        crops = self.get_crops(gts, img)
-        ordered_crops = np.zeros((len(gt_ids), self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH, 3), dtype=np.uint8)
+        crops = self.get_crops(gts, img, is_person)
+        crop_height = self.cfg.DEEPASSOC.PERSON_CROP_HEIGHT if is_person else self.cfg.DEEPASSOC.BALL_CROP_HEIGHT
+        crop_width = self.cfg.DEEPASSOC.PERSON_CROP_WIDTH if is_person else self.cfg.DEEPASSOC.BALL_CROP_WIDTH
+        ordered_crops = np.zeros((len(gt_ids), crop_height, crop_width, 3), dtype=np.uint8)
         ordered_boxes = np.zeros((len(gt_ids), 4), dtype=np.int32)
         for i, idx in enumerate(order):
             ordered_crops[idx] = crops[i]
@@ -138,7 +142,7 @@ class Solution(object):
         self.cache.update(frame_idx, ordered_crops, ordered_boxes, is_person=is_person)
 
     def update_pred_cache(self, dets, img, frame_idx, max_num, is_person):
-        crops = self.get_crops(dets, img)
+        crops = self.get_crops(dets, img, is_person)
         boxes = dets[:, :4]
         scores = dets[:, 4]
         if scores.size > max_num:
@@ -327,19 +331,27 @@ class Solution(object):
 
         return detections
 
-    def get_crops(self, dets, ori_img):
-        transform = transforms.Compose([
+    def get_crops(self, dets, ori_img, is_person):
+        ptransform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize((self.cfg.DEEPASSOC.CROP_HEIGHT, self.cfg.DEEPASSOC.CROP_WIDTH), interpolation=InterpolationMode.BICUBIC)
+            transforms.Resize((self.cfg.DEEPASSOC.PERSON_CROP_HEIGHT, self.cfg.DEEPASSOC.PERSON_CROP_WIDTH), interpolation=InterpolationMode.BICUBIC)
+        ])
+        btransform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize((self.cfg.DEEPASSOC.BALL_CROP_HEIGHT, self.cfg.DEEPASSOC.BALL_CROP_WIDTH), interpolation=InterpolationMode.BICUBIC)
         ])
 
         bboxes_ltrb, confs, clses = dets[:, :4], dets[:, 4], dets[:, 5]
+
         im_crops = []
+        transform = ptransform if is_person else btransform
+
         for box in bboxes_ltrb:
             x1, y1, x2, y2 = box
             im = ori_img[int(y1):int(y2), int(x1):int(x2)]
             im_crops.append(np.array(transform(im)))
         return im_crops
+
 
     def save_tracks_history_to_disk(self, tracks_history, frames_idx_history, ball_ids, person_ids):
         save_path = os.path.join(self.opt.output, os.path.basename(self.opt.source)[:-4], 'tracking')
