@@ -108,7 +108,6 @@ P = "/media/pi/ssd1/coco"
 IMAGE_P = os.path.join(P, "images")
 
 # Selected coco images and annotation directory
-imgs_dir = '/media/pi/ssd1/cocostuffapi/PythonAPI/selected_v2/'
 labels_dir = '/media/pi/ssd1/cocostuffapi/PythonAPI/selected_label_v2/'
 onlyfiles = [f for f in listdir(labels_dir) if isfile(join(labels_dir, f))]
 
