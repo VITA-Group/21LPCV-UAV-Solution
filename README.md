@@ -8,7 +8,7 @@ To use it, you only need **person_imgs_selector.py** and **ball_synth_v2.py** fi
 
 1. Download coco dataset 2017 and install cocoapi via https://github.com/cocodataset/cocoapi 
 2. Download ball examples from https://drive.google.com/file/d/11CdkcZ-ubDcSGm2AvaIa8pYo2u-HWoJ5/view?usp=sharing
-3. Modify directories in person_imgs_selector.py to match your coco dataset downloaded directories at https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/7c5804b21a647b969ff6385a8c070419ef475fda/person_imgs_selector.py#L11
+3. Modify directories in person_imgs_selector.py to match your coco dataset downloaded directories at 
 
 ```python 
 P = "/media/pi/ssd1/coco"
@@ -28,7 +28,7 @@ annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 coco = COCO(annFile)
 P = "/media/pi/ssd1/coco"
 ```
-modify ball directories to ball samples downloaded before at https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/7c5804b21a647b969ff6385a8c070419ef475fda/ball_synth_v2.py#L120
+modify ball directories to ball samples downloaded before at 
 ```python
 mypath_balls = '/media/pi/ssd1/cocostuffapi/PythonAPI/balls/balls'
 ```
