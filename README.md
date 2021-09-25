@@ -1,7 +1,7 @@
 # 21LPCV-UAV-Solution
 
 ## data synthesize using coco dataset
-This is an example of generating ball occluded example images. The output folder will be synthesized images and labels (ball/person). The label format will be each row is class x_center y_center width height format.
+This is an example of generating ball person images. The output folder will be synthesized images and labels (ball/person). The label format will be each row is class x_center y_center width height format.
 Box coordinates are normalized xywh format (from 0 - 1). 
 
 To use it:
