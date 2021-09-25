@@ -28,7 +28,7 @@ annFile = '{}/annotations/instances_{}.json'.format(dataDir, dataType)
 coco = COCO(annFile)
 P = "/media/pi/ssd1/coco"
 ```
-modify ball directories to ball samples downloaded at https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/7c5804b21a647b969ff6385a8c070419ef475fda/ball_synth_v2.py#L120
+modify ball directories to ball samples downloaded before at https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/7c5804b21a647b969ff6385a8c070419ef475fda/ball_synth_v2.py#L120
 ```python
 mypath_balls = '/media/pi/ssd1/cocostuffapi/PythonAPI/balls/balls'
 ```
