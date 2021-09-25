@@ -4,7 +4,9 @@
 This is an example of generating ball person images. The output folder will be synthesized images and labels (ball/person). The label format will be each row is class x_center y_center width height format.
 Box coordinates are normalized xywh format (from 0 - 1). 
 
-To use it:
+To use it, you only need https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/adbfae23dc1af5796e9b7624cadbd90bb9db05ca/person_imgs_selector.py 
+and https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/adbfae23dc1af5796e9b7624cadbd90bb9db05ca/ball_synth_v2.py files. One is to select person examples, the other is used to paste ball into person instances. You just need to slightly modify directories according to below instructions. 
+
 1. Download coco dataset 2017 and install cocoapi via https://github.com/cocodataset/cocoapi 
 2. Download ball examples from https://drive.google.com/file/d/11CdkcZ-ubDcSGm2AvaIa8pYo2u-HWoJ5/view?usp=sharing
 3. Modify directories in person_imgs_selector.py to match your coco dataset downloaded directories at https://github.com/wuzhenyusjtu/21LPCV-UAV-Solution/blob/7c5804b21a647b969ff6385a8c070419ef475fda/person_imgs_selector.py#L11
