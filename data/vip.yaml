@@ -1,0 +1,38 @@
+# Default dataset location is next to /yolov5:
+#   /parent_folder
+#     /ballPerson
+#     /yolov5
+
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+train: [/home/wuzhenyu/data/ballPerson_good/train ,
+        /home/wuzhenyu/data/synth_v4,
+        /home/wuzhenyu/data/ballPerson_good/val,
+        /home/wuzhenyu/data/VIP/train,
+        /home/wuzhenyu/data/ballperson/coco_val,
+        /home/wuzhenyu/data/ballperson/coco_train,
+        /home/wuzhenyu/data/vip_sync,
+        /home/wuzhenyu/data/vip_sync_v3,
+        /home/wuzhenyu/data/sync_ball,
+        /home/wuzhenyu/data/visdrone,
+        /home/wuzhenyu/data/VIP/val,
+        /home/wuzhenyu/data/3p2b,
+        /home/wuzhenyu/data/3p2b_4,
+        /home/wuzhenyu/data/4p3b_4,
+        /home/wuzhenyu/data/4p3b_3,
+        /home/wuzhenyu/data/4p3b_2]
+val: [/home/wuzhenyu/data/VIP/val,
+      /home/wuzhenyu/data/VIP/train]
+#val: /home/hu440/Data/ballPerson/images/val  # 5000 images
+# number of classes
+nc: 2
+
+# class names
+names: ['person', 'sports ball']
+
+# Print classes
+# with open('data/OpenImgDataset.yaml') as f:
+#   d = yaml.load(f, Loader=yaml.FullLoader)  # dict
+#   for i, x in enumerate(d['names']):
+#     print(i, x)
+ 
