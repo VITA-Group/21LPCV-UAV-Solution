@@ -122,7 +122,8 @@ After pruning model, we quantize the model using Pytorch QNNPACK.
     ```--device``` set device id use<br>
     ```--batch-size``` set batch size for quantization aware training<br>
     ```--data``` path to the vip config file<br>
-    
+      
+ ## Note: because quantization and normal training share same common functions, there is slight difference when normal training and QAT. Please check models/common to change the mode. All training modules have been tested normally under 2021 LPCV environment. 
 
 
 
