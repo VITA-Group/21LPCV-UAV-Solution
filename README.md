@@ -17,8 +17,8 @@ dataDir='/media/pi/ssd1/coco'
 dataType='train2017'
 ```
 4. Modify filter condition as your wish in person_imgs_selector.py
-5. check output images folder if you satisfy with selected samples
-6. run person_imgs_selector.py to generate coresponding image and label folders for ball_synth_v2.py to use
+5. run person_imgs_selector.py to generate coresponding image and label folders for ball_synth_v2.py to use
+6. check output images folder if you satisfy with selected samples
 7. Modify ball_synth_v2.py's coco directory at
 ```python 
 # setup coco directory
