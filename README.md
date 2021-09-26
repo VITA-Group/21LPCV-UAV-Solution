@@ -1,6 +1,13 @@
 # 21LPCV-UAV-Solution
 
 ## data synthesize using coco dataset
+
+
+![000000147772](https://user-images.githubusercontent.com/35612650/134788860-c8693c55-45d6-4ccd-bd35-01209994258d.jpg)
+
+
+![000000147772](https://user-images.githubusercontent.com/35612650/134788842-60c95c9d-95a8-4170-babb-839ea489052f.jpg)
+
 This is an example of generating ball person images. The output folder will be synthesized images and labels (ball/person). The label format will be each row is class x_center y_center width height format.
 Box coordinates are normalized xywh format (from 0 - 1). 
 
