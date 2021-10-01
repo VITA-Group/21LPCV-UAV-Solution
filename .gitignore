@@ -6,6 +6,6 @@
 **/.DS_Store
 **/__pycache__
 *.vscode
-**/inputs
+**/outputs
 *.pyc
 *.pyo
