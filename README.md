@@ -1,6 +1,6 @@
 # [Person ReID](https://github.com/layumi/Person_reID_baseline_pytorch) model compression ([PyTorch](https://pytorch.org/))
 
-Note: Original code borrow from https://github.com/layumi/Person_reID_baseline_pytorch
+Note: Original code is heavily borrowed from https://github.com/layumi/Person_reID_baseline_pytorch
 
 ## LPCV Person ReID model compression Pipeline
 
