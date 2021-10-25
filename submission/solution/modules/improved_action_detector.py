@@ -16,13 +16,18 @@ class ImprovedActionDetector(object):
         self.gt_persons_id = person_ids
         self.tracks_history = [track.astype(int) for track in tracks_history]
         self.frame_idx_history = frame_idx_history
-        self.persons_count = len(self.gt_persons_id)
-        self.balls_count = len(self.gt_balls_id)
+        self.persons_count = len(self.gt_persons_id) # Number of persons in the video
+        self.balls_count = len(self.gt_balls_id) # Number of balls in the video
 
-        self.morph_radius = 5
+        self.morph_radius = 5 # Number of time slots for erosion and dilation
         self.pred_frames = []
-        self.EPSILON, self.MAX_DISTANCE = 1e-10, 1.0
+        self.EPSILON = 1e-10 # To avoid division by zero error
+        self.MAX_DISTANCE = 1.0
 
+    """
+    Get a dictionary from frame_idx_history and tracks_history.
+    The key is frame index and the value is ball and person tracks.
+    """
     def get_frame_tracks_dct(self):
         frame_tracks_dct = OrderedDict()
         for i, frame_idx in enumerate(self.frame_idx_history):
@@ -35,17 +40,27 @@ class ImprovedActionDetector(object):
         return frame_tracks_dct
 
     def get_dist_collision_history(self, frame_tracks_dct):
+        """
+        Get the ball-person collision matrix and ball-person normalized distance matrix
+        """
         def collision(ball_tracks, person_tracks):
             balls_center = 0.5 * (ball_tracks[:, :2] + ball_tracks[:, 2:4])
             persons_center = 0.5 * (person_tracks[:, :2] + person_tracks[:, 2:4])
             persons_lt = person_tracks[:, :2]
             persons_rb = person_tracks[:, 2:4]
             ball_ids, person_ids = ball_tracks[:, 4], person_tracks[:, 4]
+
+            # The distance matrix of all ball-person pairs
             bp_dist_matx = np.linalg.norm(
                                     np.subtract(balls_center[:, np.newaxis, :], persons_center), axis=2).reshape((len(ball_ids), len(person_ids)))
+            # The (tiled) diagonal length matrix of all persons
             person_diag_matx = np.tile(np.linalg.norm(np.subtract(persons_lt, persons_rb), axis=-1),
                                        (ball_tracks.shape[0], 1))
+            # The normalized distance matrix of all ball-person pairs
             bp_norm_dist_matx = np.true_divide(bp_dist_matx, person_diag_matx).reshape((len(ball_ids), len(person_ids)))
+
+            # The collision matrix of all ball-person pairs
+            # One ball is collided with one person if the ball's center falls in the bounding box of the person
             bp_collistion_matx = np.logical_and(
                                     np.logical_and(*np.dsplit(
                                         np.subtract(balls_center[:, np.newaxis, :], persons_lt[np.newaxis, :, :]) > 0, 2)),
@@ -73,6 +88,10 @@ class ImprovedActionDetector(object):
         pred_frames, bp_norm_dist_history_dct, bp_collision_history_dct, bp_ids_history_dct = self.get_dist_collision_history(frame_tracks_dct)
 
         bp_catch_records_dct = {}
+
+        """
+        Given B balls and P persons, the ball-person catch records have the shape of BxPxT, where T is the number of frames in the video.
+        """
         for id in self.gt_balls_id:
             bp_catch_records_dct[id] = np.zeros((self.persons_count, self.frame_idx_history[-1]+1,), dtype=int)
 
@@ -84,12 +103,15 @@ class ImprovedActionDetector(object):
             ball_ids, person_ids = bp_ids_history_dct[frame_idx]
             cost_matrix = np.multiply(bp_norm_dist_matx + self.EPSILON, bp_collistion_matx)
             cost_matrix[cost_matrix <= self.EPSILON] = self.MAX_DISTANCE
+
+            # Using Hungarian algorithm to solve the assignment problem
             row_indices, col_indices = linear_sum_assignment(cost_matrix)
             collisions = []
             for row, col in zip(row_indices, col_indices):
-                ball_id, person_id = ball_ids[row], person_ids[col]
+                bid, pid = ball_ids[row], person_ids[col]
                 if cost_matrix[row, col] < self.MAX_DISTANCE:
-                    collisions.append((ball_id, person_id))
+                    collisions.append((bid, pid))
+
             # collision_pos = np.where(bp_collistion_matx==1)
             # collision_balls_indx, collision_persons_indx = collision_pos[0], collision_pos[1]
             # collision_balls_id, collision_persons_id = ball_ids[collision_balls_indx], person_ids[collision_persons_indx]
@@ -116,6 +138,20 @@ class ImprovedActionDetector(object):
                 writer.writerow(line)
 
     def format_writing(self, catch_bp_assoc_history, ball_order):
+        """detection actions from the ball-person association history
+
+        Parameters
+        ----------
+        catch_bp_assoc_history : dictionary
+            an array of 0s and 1s.
+        ball_order: list
+            a list that stores the ball orders for action detection outcome.
+
+        Returns
+        -------
+        outcome : a list of lists
+            a list of person ids as action detection outcome.
+        """
         records = []
         latest_bp_assoc_dct = {}
         for bid, time_pid_pairs in catch_bp_assoc_history.items():
@@ -135,10 +171,22 @@ class ImprovedActionDetector(object):
                 next_time = sorted_records[i+1][0]
             if time < next_time:
                 pids = [latest_bp_assoc_dct[b] for b in ball_order]
-                outcome.append([sorted_records[i][0]] + pids )
+                outcome.append( [sorted_records[i][0]] + pids )
         return outcome
 
     def morph(self, raw_signal):
+        """Find the consecutive ones in an array of 0s and 1s.
+
+        Parameters
+        ----------
+        arr : ndarray
+            an array of 0s and 1s.
+
+        Returns
+        -------
+        ranges : a list of tuples
+            a list of tuples that store the left and right indices.
+        """
         def find_consecutive_ones(arr):
             isOne = np.concatenate(([0], (arr > 0).astype(int), [0]))
             absdiff = np.abs(np.diff(isOne))
