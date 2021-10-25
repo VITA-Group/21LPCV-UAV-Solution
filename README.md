@@ -4,7 +4,6 @@
 + Sample Videos: https://drive.google.com/drive/folders/1S6kfqSG8AJpoj-y-4-nIagfmL7FpVTOf
 + Sample Solution: https://github.com/lpcvai/21LPCVC-UAV_VIdeo_Track-Sample-Solution
 + Referee System for Evaluation: https://github.com/lpcvai/2021-LPCVC-Referee
-+ Annotated Sample Videos: https://drive.google.com/drive/folders/1Gj8iO99fPp3j7q_gvuLEb_EKbeZlamq_
 ## 2. Efficient Neural Network
 ### 2.1. Literature Review
 #### 2.1.1. Compression & Acceleration
