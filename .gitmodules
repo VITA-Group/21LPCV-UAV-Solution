@@ -1,3 +1,0 @@
-[submodule "energy/rd-usb"]
-	path = energy/rd-usb
-	url = https://github.com/kolinger/rd-usb.git
